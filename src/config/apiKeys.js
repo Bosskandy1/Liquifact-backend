@@ -7,6 +7,23 @@
  *
  *   API_KEYS={"key":"lf_abc123","clientId":"service-a","scopes":["invoices:read"]};{"key":"lf_xyz789","clientId":"service-b","scopes":["invoices:write","escrow:read"],"revoked":true}
  *
+ * ## Compatibility contract (covered by tests/apiKeys.compat.test.js)
+ *
+ * - Public exports and their signatures are stable.
+ * - Absent, empty or whitespace-only `API_KEYS` yields an empty registry (auth stays optional).
+ * - Empty chunks between `;` are skipped; the `[index]` in error messages counts non-empty chunks only.
+ * - Entries are validated in a fixed order: object shape, unknown fields, key, clientId, scopes, revoked.
+ *   The first failing check throws; nothing is partially registered.
+ * - `key` and `clientId` are trimmed before storage. `revoked` defaults to `false`.
+ * - Duplicate `key` values are rejected; revoked keys stay in the registry (rejected at auth time).
+ * - The registry is rebuilt on every call (no module-level cache), so a retry is deterministic.
+ * - Because entries are split on `;`, a `;` inside a JSON string value fails closed with a parse error.
+ *
+ * ## Secrecy contract
+ *
+ * Error messages never contain a key value. JSON parser messages are deliberately
+ * not forwarded, because they can echo a snippet of the raw input (i.e. the key).
+ *
  * @module config/apiKeys
  */
 
@@ -25,7 +42,8 @@ const VALID_SCOPES = [
 ];
 
 /**
- * The minimum required length of the full API key (prefix included).
+ * The minimum required length of the full API key (prefix included),
+ * measured after trimming surrounding whitespace.
  * @type {number}
  */
 const MIN_KEY_LENGTH = 10;
@@ -110,7 +128,10 @@ function validateEntry(entry, index) {
     );
   }
 
-  if (key.length < MIN_KEY_LENGTH) {
+  // Invariant: the stored (trimmed) key must meet the minimum length, so the
+  // check is made on the trimmed value. Otherwise whitespace padding could
+  // smuggle in a key shorter than MIN_KEY_LENGTH.
+  if (key.trim().length < MIN_KEY_LENGTH) {
     throw new Error(
       `API_KEYS[${index}]: "key" must be at least ${MIN_KEY_LENGTH} characters long`
     );
@@ -187,8 +208,10 @@ function parseApiKeys(raw) {
       try {
         parsed = JSON.parse(chunk);
       } catch (_err) {
+        // Do NOT forward _err.message: V8 parser errors can echo a snippet of
+        // the input, which here contains the raw API key.
         throw new Error(
-          `API_KEYS[${index}]: failed to parse JSON — ${_err.message}`
+          `API_KEYS[${index}]: failed to parse JSON — entry is not valid JSON (parser details withheld to avoid exposing key material)`
         );
       }
       return validateEntry(parsed, index);
