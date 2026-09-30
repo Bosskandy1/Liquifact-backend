@@ -37,6 +37,35 @@ function httpStatusToCode(status) {
   return `HTTP_${status}`;
 }
 
+const INTERNAL_ERROR_MESSAGE = "An internal server error occurred.";
+const DEFAULT_RETRY_HINT =
+  "Do not retry until the issue is resolved or support is contacted.";
+
+/**
+ * Keep the error response invariant: only an integer client/server error
+ * status may cross the HTTP boundary.
+ *
+ * @param {unknown} status Candidate HTTP status.
+ * @returns {number}
+ */
+function normalizeStatus(status) {
+  return Number.isInteger(status) && status >= 400 && status <= 599
+    ? status
+    : 500;
+}
+
+/**
+ * Keep externally visible error fields scalar and predictable when malformed
+ * error-like values reach the terminal error handler.
+ *
+ * @param {unknown} value Candidate string value.
+ * @param {string} fallback Safe fallback value.
+ * @returns {string}
+ */
+function stringOrFallback(value, fallback) {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
 /**
  * Map framework and application errors into a stable HTTP error contract.
  *
@@ -45,12 +74,16 @@ function httpStatusToCode(status) {
  */
 function mapError(error) {
   if (error && (error instanceof AppError || error.name === "AppError")) {
+    const status = normalizeStatus(error.status);
     return {
-      status: error.status,
-      code: error.code || httpStatusToCode(error.status),
-      message: error.detail || error.message,
-      retryable: error.retryable ?? false,
-      retryHint: error.retryHint ?? "",
+      status,
+      code: stringOrFallback(error.code, httpStatusToCode(status)),
+      message: stringOrFallback(
+        error.detail,
+        stringOrFallback(error.message, INTERNAL_ERROR_MESSAGE),
+      ),
+      retryable: error.retryable === true,
+      retryHint: stringOrFallback(error.retryHint, ""),
     };
   }
 
@@ -62,7 +95,10 @@ function mapError(error) {
     return {
       status: 403,
       code: "FORBIDDEN",
-      message: error.message || "CORS policy: origin is not allowed.",
+      message: stringOrFallback(
+        error.message,
+        "CORS policy: origin is not allowed.",
+      ),
       retryable: false,
       retryHint: "",
     };
@@ -97,10 +133,10 @@ function mapError(error) {
       retryHint: "Retry the request in a few moments.",
     };
   }
-  const status = (error && error.status) || 500;
+  const status = normalizeStatus(error && error.status);
   const retryableStatuses = [429, 503];
   const retryable = retryableStatuses.includes(status);
-  let retryHint = "Do not retry until the issue is resolved or support is contacted.";
+  let retryHint = DEFAULT_RETRY_HINT;
   if (status === 429) {
     retryHint = "Wait for the rate limit window to reset before retrying.";
   } else if (status === 503) {
@@ -111,8 +147,8 @@ function mapError(error) {
     code: httpStatusToCode(status),
     message:
       status === 500
-        ? "An internal server error occurred."
-        : (error && error.message) || "An internal server error occurred.",
+        ? INTERNAL_ERROR_MESSAGE
+        : stringOrFallback(error && error.message, INTERNAL_ERROR_MESSAGE),
     retryable,
     retryHint,
   };
