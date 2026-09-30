@@ -68,6 +68,23 @@ class ApiKeysCache {
     this._cache = new Map();
   }
 
+  _validateRegistry(registry) {
+    if (!(registry instanceof Map)) {
+      throw new TypeError('loader must return a Map');
+    }
+
+    for (const [key, value] of registry) {
+      if (typeof key !== 'string' || key.trim() === '') {
+        throw new TypeError('registry keys must be non-empty strings');
+      }
+      if (value !== null && value !== undefined && typeof value !== 'object') {
+        throw new TypeError('registry values must be objects');
+      }
+    }
+
+    return registry;
+  }
+
   getOrLoad(key = 'default', now = Date.now()) {
     const entry = this._cache.get(key);
 
@@ -82,7 +99,15 @@ class ApiKeysCache {
       apiKeysCacheMissesTotal.inc();
     }
 
-    const registry = loadApiKeyRegistry();
+    let registry;
+    try {
+      registry = loadApiKeyRegistry();
+    } catch (error) {
+      throw error;
+    }
+
+    const validatedRegistry = this._validateRegistry(registry);
+    const snapshot = this._buildSnapshot(validatedRegistry, now);
 
     if (this._cache.size >= this.maxEntries) {
       const oldestKey = this._cache.keys().next().value;
@@ -92,11 +117,11 @@ class ApiKeysCache {
     }
 
     this._cache.set(key, {
-      registry,
+      registry: validatedRegistry,
       expiresAt: now + this.ttlMs,
     });
 
-    return this._buildSnapshot(registry, now);
+    return snapshot;
   }
 
   _buildSnapshot(registry, now) {
