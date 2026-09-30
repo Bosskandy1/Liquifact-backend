@@ -153,32 +153,40 @@ function _parseTenantOverrides(raw, defaults) {
   // Only the tenant's own enumerable keys are considered; using a Map for storage
   // keeps the result free of prototype-pollution surprises.
   for (const tenantId of Object.keys(parsed)) {
-    const override = parsed[tenantId];
-    if (override === null || typeof override !== 'object' || Array.isArray(override)) {
-      throw new VerificationConfigError(
-        `INVOICE_TENANT_THRESHOLDS["${tenantId}"] must be an object of threshold overrides.`
-      );
-    }
+    try {
+      const override = parsed[tenantId];
+      if (override === null || typeof override !== 'object' || Array.isArray(override)) {
+        throw new VerificationConfigError(
+          `INVOICE_TENANT_THRESHOLDS["${tenantId}"] must be an object of threshold overrides.`
+        );
+      }
 
-    const fraudCeiling = Object.prototype.hasOwnProperty.call(override, 'fraudCeiling')
-      ? _assertPositiveNumber(override.fraudCeiling, `tenant "${tenantId}" fraudCeiling`)
-      : defaults.fraudCeiling;
+      const fraudCeiling = Object.prototype.hasOwnProperty.call(override, 'fraudCeiling')
+        ? _assertPositiveNumber(override.fraudCeiling, `tenant "${tenantId}" fraudCeiling`)
+        : defaults.fraudCeiling;
 
-    const manualReviewThreshold = Object.prototype.hasOwnProperty.call(
-      override,
-      'manualReviewThreshold'
-    )
-      ? _assertPositiveNumber(
-        override.manualReviewThreshold,
-        `tenant "${tenantId}" manualReviewThreshold`
+      const manualReviewThreshold = Object.prototype.hasOwnProperty.call(
+        override,
+        'manualReviewThreshold'
       )
-      : defaults.manualReviewThreshold;
+        ? _assertPositiveNumber(
+          override.manualReviewThreshold,
+          `tenant "${tenantId}" manualReviewThreshold`
+        )
+        : defaults.manualReviewThreshold;
 
-    const merged = _assertConsistentPair(
-      { fraudCeiling, manualReviewThreshold },
-      `tenant "${tenantId}"`
-    );
-    overrides.set(tenantId, merged);
+      const merged = _assertConsistentPair(
+        { fraudCeiling, manualReviewThreshold },
+        `tenant "${tenantId}"`
+      );
+      overrides.set(tenantId, merged);
+    } catch (err) {
+      if (err instanceof VerificationConfigError) {
+        overrides.set(tenantId, err);
+      } else {
+        throw err;
+      }
+    }
   }
 
   return overrides;
@@ -215,6 +223,9 @@ function _buildConfig() {
 /** @type {{ defaults: ThresholdSet, tenants: Map<string, ThresholdSet> } | null} */
 let _cache = null;
 
+/** @type {Error | null} */
+let _cacheError = null;
+
 /**
  * Returns the parsed configuration, building and memoizing it on first use.
  *
@@ -222,8 +233,16 @@ let _cache = null;
  * @throws {VerificationConfigError} When env defaults or overrides are invalid.
  */
 function _getConfig() {
+  if (_cacheError) {
+    throw _cacheError;
+  }
   if (!_cache) {
-    _cache = _buildConfig();
+    try {
+      _cache = _buildConfig();
+    } catch (error) {
+      _cacheError = error;
+      throw error;
+    }
   }
   return _cache;
 }
@@ -244,7 +263,11 @@ function resolveThresholds(tenantId) {
   const { defaults, tenants } = _getConfig();
 
   if (tenantId !== undefined && tenantId !== null && tenants.has(String(tenantId))) {
-    return { ...tenants.get(String(tenantId)) };
+    const override = tenants.get(String(tenantId));
+    if (override instanceof Error) {
+      throw override;
+    }
+    return { ...override };
   }
 
   return { ...defaults };
@@ -257,6 +280,7 @@ function resolveThresholds(tenantId) {
  */
 function _resetThresholdCache() {
   _cache = null;
+  _cacheError = null;
 }
 
 module.exports = {
