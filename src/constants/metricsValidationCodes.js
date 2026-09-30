@@ -63,12 +63,20 @@ const METRICS_VALIDATION_CODES = Object.freeze({
 const METRICS_VALIDATION_ERROR_CODE = 'METRICS_VALIDATION_ERROR';
 
 /**
- * Fast membership set over {@link METRICS_VALIDATION_CODES} values, used to
- * validate a schema-declared `params.metricsCode` before trusting it.
+ * Returns true only when the given value exactly matches one of the known,
+ * frozen validation codes.
  *
- * @type {Set<string>}
+ * The lookup is built per call instead of using a module-scoped `Set`, so no
+ * shared mutable state survives across concurrent request handling. A valid
+ * request being processed on one request path must never be able to change the
+ * set that governs another request path in the same process.
+ *
+ * @param {unknown} value - Candidate validation code.
+ * @returns {boolean} Whether the value is a known metrics validation code.
  */
-const KNOWN_CODES = new Set(Object.values(METRICS_VALIDATION_CODES));
+function isKnownMetricsValidationCode(value) {
+  return typeof value === 'string' && Object.values(METRICS_VALIDATION_CODES).includes(value);
+}
 
 /**
  * Problem type URI for metrics validation failures.
@@ -106,7 +114,7 @@ function codeForIssue(issue) {
   // `params.metricsCode`, so hand-rolled refinements are not flattened into the
   // generic FIELD_INVALID bucket.
   const declared = issue.params && issue.params.metricsCode;
-  if (typeof declared === 'string' && KNOWN_CODES.has(declared)) {
+  if (isKnownMetricsValidationCode(declared)) {
     return declared;
   }
 
