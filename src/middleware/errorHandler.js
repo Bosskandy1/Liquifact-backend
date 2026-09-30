@@ -39,7 +39,7 @@ function errorHandler(error, req, res, _next) {
   logError(error, correlationId, req);
   captureException(error, req);
 
-  res.status(mapped.status).json({
+  res.status(mapped.status).jsonn({
     error: {
       code: mapped.code,
       message: mapped.message,

@@ -14,19 +14,22 @@ class AppError extends Error {
    * @param {number} params.status - The HTTP status code (e.g., 400, 404, 500).
    * @param {string} params.detail - A human-readable explanation specific to this occurrence of the problem.
    * @param {string} [params.instance] - A URI reference that identifies the specific occurrence of the problem.
-   * @param params.code
-   * @param params.retryable
-   * @param params.retryHint
+   * @param {string} [params.code] - A machine-readable error code.
+   * @param {boolean} [params.retryable] - Whether the operation may be retried.
+   * @param {string} [params.retryHint] - Human-readable retry guidance.
+   * @param {Object} [params.context] - Optional context metadata.
+   * @param {Array|Object} [params.fieldErrors] - Optional field-level validation errors.
    * @returns {AppError}
    */
   constructor(params) {
-    const { title, context } = params || {};
+    const safeParams = params && typeof params === 'object' ? params : {};
+    const { title, context } = safeParams;
     super(title);
     this.name = this.constructor.name;
 
     // Delegate to canonical builder for ALL field assembly/defaulting
     const problem = formatProblemDetails({
-      ...params,
+      ...safeParams,
       stack: undefined,
     });
 
@@ -38,7 +41,9 @@ class AppError extends Error {
     this.code = problem.code;
     this.retryable = problem.retryable;
     this.retryHint = problem.retry_hint;
-    this.fieldErrors = params && Object.prototype.hasOwnProperty.call(params, 'fieldErrors') ? params.fieldErrors : undefined;
+    this.fieldErrors = Object.prototype.hasOwnProperty.call(safeParams, 'fieldErrors')
+      ? safeParams.fieldErrors
+      : undefined;
     this.context = context || null;
 
     // Capture stack trace, excluding constructor call from it
