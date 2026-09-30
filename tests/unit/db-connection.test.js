@@ -23,8 +23,8 @@ describe('knexfile environment config blocks', () => {
     expect(knexfile.test).toBeDefined();
   });
 
-  test('test block uses SQLite :memory:', () => {
-    expect(knexfile.test.client).toBe('sqlite3');
+  test('test block uses better-sqlite3 :memory:', () => {
+    expect(knexfile.test.client).toBe('better-sqlite3');
     expect(knexfile.test.connection.filename).toBe(':memory:');
   });
 
@@ -68,7 +68,7 @@ describe('resolveConfig connection-selection logic', () => {
   test('test env returns the test config block', () => {
     const rc = require('../../src/db/resolveConfig');
     const cfg = rc('test');
-    expect(cfg.client).toBe('sqlite3');
+    expect(cfg.client).toBe('better-sqlite3');
     expect(cfg.connection.filename).toBe(':memory:');
   });
 
