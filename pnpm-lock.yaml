@@ -6,46 +6,126 @@ settings:
 
 importers:
 
-devDependencies:
-  '@babel/types':
-    specifier: ^7.29.7
-    version: 7.29.7
-  '@types/node':
-    specifier: ^20.0.0
-    version: 20.19.43
-  autocannon:
-    specifier: ^8.0.0
-    version: 8.0.0
-  c8:
-    specifier: ^10.1.0
-    version: 10.1.3
-  eslint:
-    specifier: ^9.21.0
-    version: 9.39.5
-  eslint-plugin-jsdoc:
-    specifier: 50.6.3
-    version: 50.6.3(eslint@9.39.5)
-  eslint-plugin-security:
-    specifier: ^3.0.1
-    version: 3.0.1
-  globals:
-    specifier: ^16.0.0
-    version: 16.5.0
-  jest:
-    specifier: ^30.3.0
-    version: 30.4.2(@types/node@20.19.43)(ts-node@10.9.2)
-  redis:
-    specifier: 6.1.0
-    version: 6.1.0(@opentelemetry/api@1.9.1)
-  supertest:
-    specifier: ^7.0.0
-    version: 7.2.2
-  ts-node:
-    specifier: ^10.9.2
-    version: 10.9.2(@types/node@20.19.43)(typescript@5.9.3)
-  typescript:
-    specifier: ^5.0.0
-    version: 5.9.3
+  .:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.665.0
+        version: 3.1142.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.665.0
+        version: 3.1142.0
+      '@sentry/node':
+        specifier: ^8.0.0
+        version: 8.55.2
+      '@stellar/stellar-sdk':
+        specifier: ^16.0.1
+        version: 16.3.0
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
+      axios:
+        specifier: ^1.16.1
+        version: 1.20.0
+      better-sqlite3:
+        specifier: ^13.0.1
+        version: 13.0.3
+      chessify-protocol:
+        specifier: ^0.1.0
+        version: 0.1.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@tanstack/query-core@5.104.0)(@types/react@19.3.0)(encoding@0.1.13)(lit@3.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@19.3.0))(zod@4.6.5)
+      cors:
+        specifier: ^2.8.6
+        version: 2.8.6
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.4.2
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      express-rate-limit:
+        specifier: ^7.5.0
+        version: 7.5.1(express@5.2.1)
+      helmet:
+        specifier: ^8.1.0
+        version: 8.3.0
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.3
+      knex:
+        specifier: ^3.1.0
+        version: 3.3.0(better-sqlite3@13.0.3)(sqlite3@5.1.7)
+      multer:
+        specifier: ^1.4.5-lts.1
+        version: 1.4.5-lts.2
+      nanoid:
+        specifier: ^5.1.9
+        version: 5.1.16
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
+      pino-http:
+        specifier: ^11.0.0
+        version: 11.0.0
+      pino-pretty:
+        specifier: ^13.1.3
+        version: 13.1.3
+      prom-client:
+        specifier: ^14.2.0
+        version: 14.2.0
+      rate-limit-redis:
+        specifier: ^4.3.1
+        version: 4.3.1(express-rate-limit@7.5.1(express@5.2.1))
+      sqlite3:
+        specifier: ^5.1.6
+        version: 5.1.7
+      swagger-jsdoc:
+        specifier: ^6.2.8
+        version: 6.3.0(openapi-types@12.1.3)
+      zod:
+        specifier: ^4.3.6
+        version: 4.6.5
+    devDependencies:
+      '@babel/types':
+        specifier: ^7.29.7
+        version: 7.29.8
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      autocannon:
+        specifier: ^8.0.0
+        version: 8.0.0
+      c8:
+        specifier: ^10.1.0
+        version: 10.1.3
+      eslint:
+        specifier: ^9.39.5
+        version: 9.39.5
+      eslint-plugin-jsdoc:
+        specifier: 50.6.3
+        version: 50.6.3(eslint@9.39.5)
+      eslint-plugin-security:
+        specifier: ^3.0.1
+        version: 3.0.1
+      globals:
+        specifier: ^16.0.0
+        version: 16.5.0
+      jest:
+        specifier: ^30.3.0
+        version: 30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      redis:
+        specifier: ^6.0.1
+        version: 6.2.1(@opentelemetry/api@1.9.1)
+      supertest:
+        specifier: ^7.0.0
+        version: 7.3.0
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@20.19.43)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
 packages:
 
@@ -5475,20 +5555,20 @@ snapshots:
 
   '@babel/compat-data@7.29.7': {}
 
-  '@babel/core@7.29.7(supports-color@8.1.1)':
+  '@babel/core@7.29.7':
     dependencies:
       '@babel/code-frame': 7.29.7
       '@babel/generator': 7.29.8
       '@babel/helper-compilation-targets': 7.29.7
-      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
+      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7)
       '@babel/helpers': 7.29.7
       '@babel/parser': 7.29.9
       '@babel/template': 7.29.7
-      '@babel/traverse': 7.29.8(supports-color@8.1.1)
+      '@babel/traverse': 7.29.8
       '@babel/types': 7.29.8
       '@jridgewell/remapping': 2.3.5
       convert-source-map: 2.0.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -5513,19 +5593,19 @@ snapshots:
 
   '@babel/helper-globals@7.29.7': {}
 
-  '@babel/helper-module-imports@7.29.7(supports-color@8.1.1)':
+  '@babel/helper-module-imports@7.29.7':
     dependencies:
-      '@babel/traverse': 7.29.8(supports-color@8.1.1)
+      '@babel/traverse': 7.29.8
       '@babel/types': 7.29.8
     transitivePeerDependencies:
       - supports-color
 
-  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)':
+  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
-      '@babel/helper-module-imports': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
+      '@babel/helper-module-imports': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
-      '@babel/traverse': 7.29.8(supports-color@8.1.1)
+      '@babel/traverse': 7.29.8
     transitivePeerDependencies:
       - supports-color
 
@@ -5546,89 +5626,89 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.8
 
-  '@babel/plugin-syntax-async-generators@7.8.4(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-async-generators@7.8.4(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-bigint@7.8.3(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-bigint@7.8.3(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-class-properties@7.12.13(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-class-properties@7.12.13(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-class-static-block@7.14.5(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-class-static-block@7.14.5(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-import-attributes@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-import-attributes@7.29.7(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-import-meta@7.10.4(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-import-meta@7.10.4(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-json-strings@7.8.3(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-json-strings@7.8.3(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-logical-assignment-operators@7.10.4(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-logical-assignment-operators@7.10.4(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-nullish-coalescing-operator@7.8.3(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-nullish-coalescing-operator@7.8.3(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-numeric-separator@7.10.4(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-numeric-separator@7.10.4(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-object-rest-spread@7.8.3(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-object-rest-spread@7.8.3(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-optional-catch-binding@7.8.3(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-optional-catch-binding@7.8.3(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-optional-chaining@7.8.3(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-optional-chaining@7.8.3(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-private-property-in-object@7.14.5(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-private-property-in-object@7.14.5(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-top-level-await@7.14.5(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-top-level-await@7.14.5(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))':
+  '@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7)':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
   '@babel/template@7.29.7':
@@ -5637,7 +5717,7 @@ snapshots:
       '@babel/parser': 7.29.9
       '@babel/types': 7.29.8
 
-  '@babel/traverse@7.29.8(supports-color@8.1.1)':
+  '@babel/traverse@7.29.8':
     dependencies:
       '@babel/code-frame': 7.29.7
       '@babel/generator': 7.29.8
@@ -5645,7 +5725,7 @@ snapshots:
       '@babel/parser': 7.29.9
       '@babel/template': 7.29.7
       '@babel/types': 7.29.8
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -5722,17 +5802,17 @@ snapshots:
       esquery: 1.7.0
       jsdoc-type-pratt-parser: 4.1.0
 
-  '@eslint-community/eslint-utils@4.10.1(eslint@9.39.5(supports-color@8.1.1))':
+  '@eslint-community/eslint-utils@4.10.1(eslint@9.39.5)':
     dependencies:
-      eslint: 9.39.5(supports-color@8.1.1)
+      eslint: 9.39.5
       eslint-visitor-keys: 3.4.3
 
   '@eslint-community/regexpp@4.12.2': {}
 
-  '@eslint/config-array@0.21.2(supports-color@8.1.1)':
+  '@eslint/config-array@0.21.2':
     dependencies:
       '@eslint/object-schema': 2.1.7
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       minimatch: 3.1.5
     transitivePeerDependencies:
       - supports-color
@@ -5745,10 +5825,10 @@ snapshots:
     dependencies:
       '@types/json-schema': 7.0.15
 
-  '@eslint/eslintrc@3.3.7(supports-color@8.1.1)':
+  '@eslint/eslintrc@3.3.7':
     dependencies:
       ajv: 6.15.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       espree: 10.4.0
       globals: 14.0.0
       ignore: 5.3.2
@@ -5931,13 +6011,13 @@ snapshots:
       jest-util: 30.5.1
       slash: 3.0.0
 
-  '@jest/core@30.5.2(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))':
+  '@jest/core@30.5.2(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))':
     dependencies:
       '@jest/console': 30.5.2
       '@jest/pattern': 30.5.0
-      '@jest/reporters': 30.5.2(supports-color@8.1.1)
+      '@jest/reporters': 30.5.2
       '@jest/test-result': 30.5.2
-      '@jest/transform': 30.5.2(supports-color@8.1.1)
+      '@jest/transform': 30.5.2
       '@jest/types': 30.5.1
       '@types/node': 20.19.43
       ansi-escapes: 4.3.2
@@ -5947,15 +6027,15 @@ snapshots:
       fast-json-stable-stringify: 2.1.0
       graceful-fs: 4.2.11
       jest-changed-files: 30.5.1
-      jest-config: 30.5.2(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      jest-config: 30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
       jest-haste-map: 30.5.1
       jest-message-util: 30.5.1
       jest-regex-util: 30.5.0
       jest-resolve: 30.5.1
-      jest-resolve-dependencies: 30.5.2(supports-color@8.1.1)
-      jest-runner: 30.5.2(supports-color@8.1.1)
-      jest-runtime: 30.5.2(supports-color@8.1.1)
-      jest-snapshot: 30.5.2(supports-color@8.1.1)
+      jest-resolve-dependencies: 30.5.2
+      jest-runner: 30.5.2
+      jest-runtime: 30.5.2
+      jest-snapshot: 30.5.2
       jest-util: 30.5.1
       jest-validate: 30.5.1
       jest-watcher: 30.5.2
@@ -5980,10 +6060,10 @@ snapshots:
     dependencies:
       '@jest/get-type': 30.5.0
 
-  '@jest/expect@30.5.2(supports-color@8.1.1)':
+  '@jest/expect@30.5.2':
     dependencies:
       expect: 30.5.2
-      jest-snapshot: 30.5.2(supports-color@8.1.1)
+      jest-snapshot: 30.5.2
     transitivePeerDependencies:
       - supports-color
 
@@ -5998,10 +6078,10 @@ snapshots:
 
   '@jest/get-type@30.5.0': {}
 
-  '@jest/globals@30.5.2(supports-color@8.1.1)':
+  '@jest/globals@30.5.2':
     dependencies:
       '@jest/environment': 30.5.2
-      '@jest/expect': 30.5.2(supports-color@8.1.1)
+      '@jest/expect': 30.5.2
       '@jest/types': 30.5.1
       jest-mock: 30.5.2
     transitivePeerDependencies:
@@ -6012,12 +6092,12 @@ snapshots:
       '@types/node': 20.19.43
       jest-regex-util: 30.5.0
 
-  '@jest/reporters@30.5.2(supports-color@8.1.1)':
+  '@jest/reporters@30.5.2':
     dependencies:
       '@bcoe/v8-coverage': 0.2.3
       '@jest/console': 30.5.2
       '@jest/test-result': 30.5.2
-      '@jest/transform': 30.5.2(supports-color@8.1.1)
+      '@jest/transform': 30.5.2
       '@jest/types': 30.5.1
       '@jridgewell/trace-mapping': 0.3.31
       '@types/node': 20.19.43
@@ -6027,9 +6107,9 @@ snapshots:
       glob: 13.0.6
       graceful-fs: 4.2.11
       istanbul-lib-coverage: 3.2.2
-      istanbul-lib-instrument: 6.0.3(supports-color@8.1.1)
+      istanbul-lib-instrument: 6.0.3
       istanbul-lib-report: 3.0.1
-      istanbul-lib-source-maps: 5.0.6(supports-color@8.1.1)
+      istanbul-lib-source-maps: 5.0.6
       istanbul-reports: 3.2.0
       jest-message-util: 30.5.1
       jest-util: 30.5.1
@@ -6072,12 +6152,12 @@ snapshots:
       jest-haste-map: 30.5.1
       slash: 3.0.0
 
-  '@jest/transform@30.5.2(supports-color@8.1.1)':
+  '@jest/transform@30.5.2':
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@jest/types': 30.5.1
       '@jridgewell/trace-mapping': 0.3.31
-      babel-plugin-istanbul: 8.0.0(supports-color@8.1.1)
+      babel-plugin-istanbul: 8.0.0
       chalk: 4.1.2
       convert-source-map: 2.0.0
       fast-json-stable-stringify: 2.1.0
@@ -6243,181 +6323,181 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.28.0
 
-  '@opentelemetry/instrumentation-amqplib@0.46.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-amqplib@0.46.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-connect@0.43.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-connect@0.43.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
       '@types/connect': 3.4.36
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-dataloader@0.16.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-dataloader@0.16.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-express@0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-express@0.47.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-fastify@0.44.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-fastify@0.44.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-fs@0.19.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-fs@0.19.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-generic-pool@0.43.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-generic-pool@0.43.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-graphql@0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-graphql@0.47.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-hapi@0.45.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-hapi@0.45.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-http@0.57.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-http@0.57.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.28.0
       forwarded-parse: 2.1.2
       semver: 7.8.5
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-ioredis@0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-ioredis@0.47.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/redis-common': 0.36.2
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-kafkajs@0.7.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-kafkajs@0.7.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-knex@0.44.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-knex@0.44.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-koa@0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-koa@0.47.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-lru-memoizer@0.44.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-lru-memoizer@0.44.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-mongodb@0.51.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-mongodb@0.51.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-mongoose@0.46.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-mongoose@0.46.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-mysql2@0.45.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-mysql2@0.45.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
       '@opentelemetry/sql-common': 0.40.1(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-mysql@0.45.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-mysql@0.45.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
       '@types/mysql': 2.15.26
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-nestjs-core@0.44.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-nestjs-core@0.44.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-pg@0.50.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-pg@0.50.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.27.0
       '@opentelemetry/sql-common': 0.40.1(@opentelemetry/api@1.9.1)
       '@types/pg': 8.6.1
@@ -6425,63 +6505,63 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-redis-4@0.46.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-redis-4@0.46.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/redis-common': 0.36.2
       '@opentelemetry/semantic-conventions': 1.43.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-tedious@0.18.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-tedious@0.18.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
       '@types/tedious': 4.0.14
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation-undici@0.10.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation-undici@0.10.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation@0.53.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation@0.53.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.53.0
       '@types/shimmer': 1.2.0
       import-in-the-middle: 1.15.0
-      require-in-the-middle: 7.5.2(supports-color@8.1.1)
+      require-in-the-middle: 7.5.2
       semver: 7.8.5
       shimmer: 1.2.1
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation@0.57.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation@0.57.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.57.1
       '@types/shimmer': 1.2.0
       import-in-the-middle: 1.15.0
-      require-in-the-middle: 7.5.2(supports-color@8.1.1)
+      require-in-the-middle: 7.5.2
       semver: 7.8.5
       shimmer: 1.2.1
     transitivePeerDependencies:
       - supports-color
 
-  '@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
+  '@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.57.2
       '@types/shimmer': 1.2.0
       import-in-the-middle: 1.15.0
-      require-in-the-middle: 7.5.2(supports-color@8.1.1)
+      require-in-the-middle: 7.5.2
       semver: 7.8.5
       shimmer: 1.2.1
     transitivePeerDependencies:
@@ -6582,10 +6662,10 @@ snapshots:
 
   '@pkgr/core@0.3.6': {}
 
-  '@prisma/instrumentation@5.22.0(supports-color@8.1.1)':
+  '@prisma/instrumentation@5.22.0':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.53.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.53.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 1.30.1(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
@@ -7309,52 +7389,52 @@ snapshots:
 
   '@sentry/core@8.55.2': {}
 
-  '@sentry/node@8.55.2(supports-color@8.1.1)':
+  '@sentry/node@8.55.2':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/context-async-hooks': 1.30.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-amqplib': 0.46.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-connect': 0.43.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-dataloader': 0.16.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-express': 0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-fastify': 0.44.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-fs': 0.19.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-generic-pool': 0.43.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-graphql': 0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-hapi': 0.45.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-http': 0.57.1(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-ioredis': 0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-kafkajs': 0.7.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-knex': 0.44.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-koa': 0.47.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-lru-memoizer': 0.44.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-mongodb': 0.51.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-mongoose': 0.46.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-mysql': 0.45.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-mysql2': 0.45.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-nestjs-core': 0.44.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-pg': 0.50.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-redis-4': 0.46.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-tedious': 0.18.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
-      '@opentelemetry/instrumentation-undici': 0.10.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-amqplib': 0.46.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-connect': 0.43.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-dataloader': 0.16.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-express': 0.47.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-fastify': 0.44.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-fs': 0.19.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-generic-pool': 0.43.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-graphql': 0.47.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-hapi': 0.45.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-http': 0.57.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-ioredis': 0.47.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-kafkajs': 0.7.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-knex': 0.44.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-koa': 0.47.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-lru-memoizer': 0.44.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-mongodb': 0.51.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-mongoose': 0.46.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-mysql': 0.45.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-mysql2': 0.45.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-nestjs-core': 0.44.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-pg': 0.50.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-redis-4': 0.46.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-tedious': 0.18.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-undici': 0.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 1.30.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 1.30.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
-      '@prisma/instrumentation': 5.22.0(supports-color@8.1.1)
+      '@prisma/instrumentation': 5.22.0
       '@sentry/core': 8.55.2
-      '@sentry/opentelemetry': 8.55.2(@opentelemetry/api@1.9.1)(@opentelemetry/context-async-hooks@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/core@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)
+      '@sentry/opentelemetry': 8.55.2(@opentelemetry/api@1.9.1)(@opentelemetry/context-async-hooks@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/core@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)
       import-in-the-middle: 1.15.0
     transitivePeerDependencies:
       - supports-color
 
-  '@sentry/opentelemetry@8.55.2(@opentelemetry/api@1.9.1)(@opentelemetry/context-async-hooks@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/core@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)':
+  '@sentry/opentelemetry@8.55.2(@opentelemetry/api@1.9.1)(@opentelemetry/context-async-hooks@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/core@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/context-async-hooks': 1.30.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
+      '@opentelemetry/instrumentation': 0.57.2(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 1.30.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
       '@sentry/core': 8.55.2
@@ -7578,12 +7658,12 @@ snapshots:
 
   '@stellar/js-xdr@4.0.0': {}
 
-  '@stellar/stellar-sdk@16.3.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)':
+  '@stellar/stellar-sdk@16.3.0':
     dependencies:
       '@noble/ed25519': 3.2.0
       '@noble/hashes': 2.4.0
       '@stellar/js-xdr': 4.0.0
-      axios: 1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
+      axios: 1.18.0
       base32.js: 0.1.0
       bignumber.js: 11.1.5
       buffer: 6.0.3
@@ -8163,9 +8243,9 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  agent-base@6.0.2(supports-color@8.1.1):
+  agent-base@6.0.2:
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -8289,45 +8369,45 @@ snapshots:
       possible-typed-array-names: 1.1.0
     optional: true
 
-  axios@1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1):
+  axios@1.18.0:
     dependencies:
-      follow-redirects: 1.16.0(debug@4.4.3(supports-color@8.1.1))
+      follow-redirects: 1.16.0
       form-data: 4.0.6
-      https-proxy-agent: 5.0.1(supports-color@8.1.1)
+      https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
       - debug
       - supports-color
 
-  axios@1.20.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1):
+  axios@1.20.0:
     dependencies:
-      follow-redirects: 1.16.0(debug@4.4.3(supports-color@8.1.1))
+      follow-redirects: 1.16.0
       form-data: 4.0.6
-      https-proxy-agent: 5.0.1(supports-color@8.1.1)
+      https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
       - debug
       - supports-color
 
-  babel-jest@30.5.2(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1):
+  babel-jest@30.5.2(@babel/core@7.29.7):
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
-      '@jest/transform': 30.5.2(supports-color@8.1.1)
+      '@babel/core': 7.29.7
+      '@jest/transform': 30.5.2
       '@types/babel__core': 7.20.5
-      babel-plugin-istanbul: 8.0.0(supports-color@8.1.1)
-      babel-preset-jest: 30.5.0(@babel/core@7.29.7(supports-color@8.1.1))
+      babel-plugin-istanbul: 8.0.0
+      babel-preset-jest: 30.5.0(@babel/core@7.29.7)
       chalk: 4.1.2
       graceful-fs: 4.2.11
       slash: 3.0.0
     transitivePeerDependencies:
       - supports-color
 
-  babel-plugin-istanbul@8.0.0(supports-color@8.1.1):
+  babel-plugin-istanbul@8.0.0:
     dependencies:
       '@babel/helper-plugin-utils': 7.29.7
       '@istanbuljs/load-nyc-config': 1.1.0
       '@istanbuljs/schema': 0.1.6
-      istanbul-lib-instrument: 6.0.3(supports-color@8.1.1)
+      istanbul-lib-instrument: 6.0.3
       test-exclude: 7.0.2
     transitivePeerDependencies:
       - supports-color
@@ -8336,30 +8416,30 @@ snapshots:
     dependencies:
       '@types/babel__core': 7.20.5
 
-  babel-preset-current-node-syntax@1.2.0(@babel/core@7.29.7(supports-color@8.1.1)):
+  babel-preset-current-node-syntax@1.2.0(@babel/core@7.29.7):
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
-      '@babel/plugin-syntax-async-generators': 7.8.4(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-bigint': 7.8.3(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-class-properties': 7.12.13(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-class-static-block': 7.14.5(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-import-attributes': 7.29.7(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-import-meta': 7.10.4(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-json-strings': 7.8.3(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-logical-assignment-operators': 7.10.4(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-nullish-coalescing-operator': 7.8.3(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-numeric-separator': 7.10.4(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-object-rest-spread': 7.8.3(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-optional-catch-binding': 7.8.3(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-optional-chaining': 7.8.3(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-private-property-in-object': 7.14.5(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-top-level-await': 7.14.5(@babel/core@7.29.7(supports-color@8.1.1))
+      '@babel/core': 7.29.7
+      '@babel/plugin-syntax-async-generators': 7.8.4(@babel/core@7.29.7)
+      '@babel/plugin-syntax-bigint': 7.8.3(@babel/core@7.29.7)
+      '@babel/plugin-syntax-class-properties': 7.12.13(@babel/core@7.29.7)
+      '@babel/plugin-syntax-class-static-block': 7.14.5(@babel/core@7.29.7)
+      '@babel/plugin-syntax-import-attributes': 7.29.7(@babel/core@7.29.7)
+      '@babel/plugin-syntax-import-meta': 7.10.4(@babel/core@7.29.7)
+      '@babel/plugin-syntax-json-strings': 7.8.3(@babel/core@7.29.7)
+      '@babel/plugin-syntax-logical-assignment-operators': 7.10.4(@babel/core@7.29.7)
+      '@babel/plugin-syntax-nullish-coalescing-operator': 7.8.3(@babel/core@7.29.7)
+      '@babel/plugin-syntax-numeric-separator': 7.10.4(@babel/core@7.29.7)
+      '@babel/plugin-syntax-object-rest-spread': 7.8.3(@babel/core@7.29.7)
+      '@babel/plugin-syntax-optional-catch-binding': 7.8.3(@babel/core@7.29.7)
+      '@babel/plugin-syntax-optional-chaining': 7.8.3(@babel/core@7.29.7)
+      '@babel/plugin-syntax-private-property-in-object': 7.14.5(@babel/core@7.29.7)
+      '@babel/plugin-syntax-top-level-await': 7.14.5(@babel/core@7.29.7)
 
-  babel-preset-jest@30.5.0(@babel/core@7.29.7(supports-color@8.1.1)):
+  babel-preset-jest@30.5.0(@babel/core@7.29.7):
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       babel-plugin-jest-hoist: 30.5.0
-      babel-preset-current-node-syntax: 1.2.0(@babel/core@7.29.7(supports-color@8.1.1))
+      babel-preset-current-node-syntax: 1.2.0(@babel/core@7.29.7)
 
   balanced-match@1.0.2: {}
 
@@ -8450,11 +8530,11 @@ snapshots:
   bn.js@4.12.5:
     optional: true
 
-  body-parser@2.3.0(supports-color@8.1.1):
+  body-parser@2.3.0:
     dependencies:
       bytes: 3.1.2
       content-type: 2.1.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       http-errors: 2.0.1
       iconv-lite: 0.7.3
       on-finished: 2.4.1
@@ -8638,7 +8718,7 @@ snapshots:
 
   chess.js@1.4.0: {}
 
-  chessify-protocol@0.1.2(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@tanstack/query-core@5.104.0)(@types/react@19.3.0)(encoding@0.1.13)(lit@3.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@19.3.0))(zod@4.6.5):
+  chessify-protocol@0.1.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@tanstack/query-core@5.104.0)(@types/react@19.3.0)(encoding@0.1.13)(lit@3.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@19.3.0))(zod@4.6.5):
     dependencies:
       '@radix-ui/react-dialog': 1.1.23(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-dropdown-menu': 2.1.24(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -8658,7 +8738,7 @@ snapshots:
       '@tanstack/react-query': 5.104.0(react@19.3.0)
       chess.js: 1.4.0
       framer-motion: 12.43.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      next: 16.2.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      next: 16.2.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       next-themes: 0.4.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react: 19.3.0
       react-chessboard: 5.12.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -8869,17 +8949,13 @@ snapshots:
 
   dayjs@1.11.13: {}
 
-  debug@4.3.4(supports-color@8.1.1):
+  debug@4.3.4:
     dependencies:
       ms: 2.1.2
-    optionalDependencies:
-      supports-color: 8.1.1
 
-  debug@4.4.3(supports-color@8.1.1):
+  debug@4.4.3:
     dependencies:
       ms: 2.1.3
-    optionalDependencies:
-      supports-color: 8.1.1
 
   decamelize@1.2.0: {}
 
@@ -9044,14 +9120,14 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-plugin-jsdoc@50.6.3(eslint@9.39.5(supports-color@8.1.1))(supports-color@8.1.1):
+  eslint-plugin-jsdoc@50.6.3(eslint@9.39.5):
     dependencies:
       '@es-joy/jsdoccomment': 0.49.0
       are-docs-informative: 0.0.2
       comment-parser: 1.4.1
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       escape-string-regexp: 4.0.0
-      eslint: 9.39.5(supports-color@8.1.1)
+      eslint: 9.39.5
       espree: 10.4.0
       esquery: 1.7.0
       parse-imports: 2.2.1
@@ -9074,14 +9150,14 @@ snapshots:
 
   eslint-visitor-keys@4.2.1: {}
 
-  eslint@9.39.5(supports-color@8.1.1):
+  eslint@9.39.5:
     dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@9.39.5(supports-color@8.1.1))
+      '@eslint-community/eslint-utils': 4.10.1(eslint@9.39.5)
       '@eslint-community/regexpp': 4.12.2
-      '@eslint/config-array': 0.21.2(supports-color@8.1.1)
+      '@eslint/config-array': 0.21.2
       '@eslint/config-helpers': 0.4.2
       '@eslint/core': 0.17.0
-      '@eslint/eslintrc': 3.3.7(supports-color@8.1.1)
+      '@eslint/eslintrc': 3.3.7
       '@eslint/js': 9.39.5
       '@eslint/plugin-kit': 0.4.1
       '@humanfs/node': 0.16.8
@@ -9091,7 +9167,7 @@ snapshots:
       ajv: 6.15.0
       chalk: 4.1.2
       cross-spawn: 7.0.6
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       escape-string-regexp: 4.0.0
       eslint-scope: 8.4.0
       eslint-visitor-keys: 4.2.1
@@ -9178,24 +9254,24 @@ snapshots:
       jest-mock: 30.5.2
       jest-util: 30.5.1
 
-  express-rate-limit@7.5.1(express@5.2.1(supports-color@8.1.1)):
+  express-rate-limit@7.5.1(express@5.2.1):
     dependencies:
-      express: 5.2.1(supports-color@8.1.1)
+      express: 5.2.1
 
-  express@5.2.1(supports-color@8.1.1):
+  express@5.2.1:
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.3.0(supports-color@8.1.1)
+      body-parser: 2.3.0
       content-disposition: 1.1.0
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.2.2
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 2.1.1(supports-color@8.1.1)
+      finalhandler: 2.1.1
       fresh: 2.0.0
       http-errors: 2.0.1
       merge-descriptors: 2.0.0
@@ -9206,9 +9282,9 @@ snapshots:
       proxy-addr: 2.0.8
       qs: 6.16.0
       range-parser: 1.3.0
-      router: 2.2.0(supports-color@8.1.1)
-      send: 1.2.1(supports-color@8.1.1)
-      serve-static: 2.2.1(supports-color@8.1.1)
+      router: 2.2.0
+      send: 1.2.1
+      serve-static: 2.2.1
       statuses: 2.0.2
       type-is: 2.1.0
       vary: 1.1.2
@@ -9252,9 +9328,9 @@ snapshots:
 
   filter-obj@1.1.0: {}
 
-  finalhandler@2.1.1(supports-color@8.1.1):
+  finalhandler@2.1.1:
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -9280,9 +9356,7 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  follow-redirects@1.16.0(debug@4.4.3(supports-color@8.1.1)):
-    optionalDependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+  follow-redirects@1.16.0: {}
 
   for-each@0.3.5:
     dependencies:
@@ -9506,19 +9580,19 @@ snapshots:
 
   http-parser-js@0.5.10: {}
 
-  http-proxy-agent@4.0.1(supports-color@8.1.1):
+  http-proxy-agent@4.0.1:
     dependencies:
       '@tootallnate/once': 1.1.2
-      agent-base: 6.0.2(supports-color@8.1.1)
-      debug: 4.4.3(supports-color@8.1.1)
+      agent-base: 6.0.2
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
     optional: true
 
-  https-proxy-agent@5.0.1(supports-color@8.1.1):
+  https-proxy-agent@5.0.1:
     dependencies:
-      agent-base: 6.0.2(supports-color@8.1.1)
-      debug: 4.4.3(supports-color@8.1.1)
+      agent-base: 6.0.2
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -9644,9 +9718,9 @@ snapshots:
 
   istanbul-lib-coverage@3.2.2: {}
 
-  istanbul-lib-instrument@6.0.3(supports-color@8.1.1):
+  istanbul-lib-instrument@6.0.3:
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/parser': 7.29.9
       '@istanbuljs/schema': 0.1.6
       istanbul-lib-coverage: 3.2.2
@@ -9660,10 +9734,10 @@ snapshots:
       make-dir: 4.0.0
       supports-color: 7.2.0
 
-  istanbul-lib-source-maps@5.0.6(supports-color@8.1.1):
+  istanbul-lib-source-maps@5.0.6:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       istanbul-lib-coverage: 3.2.2
     transitivePeerDependencies:
       - supports-color
@@ -9689,10 +9763,10 @@ snapshots:
       jest-util: 30.5.1
       p-limit: 3.1.0
 
-  jest-circus@30.5.2(supports-color@8.1.1):
+  jest-circus@30.5.2:
     dependencies:
       '@jest/environment': 30.5.2
-      '@jest/expect': 30.5.2(supports-color@8.1.1)
+      '@jest/expect': 30.5.2
       '@jest/test-result': 30.5.2
       '@jest/types': 30.5.1
       '@types/node': 20.19.43
@@ -9703,8 +9777,8 @@ snapshots:
       jest-each: 30.5.2
       jest-matcher-utils: 30.5.2
       jest-message-util: 30.5.1
-      jest-runtime: 30.5.2(supports-color@8.1.1)
-      jest-snapshot: 30.5.2(supports-color@8.1.1)
+      jest-runtime: 30.5.2
+      jest-snapshot: 30.5.2
       jest-util: 30.5.1
       p-limit: 3.1.0
       pretty-format: 30.5.1
@@ -9715,15 +9789,15 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  jest-cli@30.5.2(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3)):
+  jest-cli@30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3)):
     dependencies:
-      '@jest/core': 30.5.2(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      '@jest/core': 30.5.2(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
       '@jest/test-result': 30.5.2
       '@jest/types': 30.5.1
       chalk: 4.1.2
       exit-x: 0.2.2
       import-local: 3.2.0
-      jest-config: 30.5.2(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      jest-config: 30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
       jest-util: 30.5.1
       jest-validate: 30.5.1
       yargs: 17.7.3
@@ -9734,25 +9808,25 @@ snapshots:
       - supports-color
       - ts-node
 
-  jest-config@30.5.2(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3)):
+  jest-config@30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3)):
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@jest/get-type': 30.5.0
       '@jest/pattern': 30.5.0
       '@jest/test-sequencer': 30.5.2
       '@jest/types': 30.5.1
-      babel-jest: 30.5.2(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
+      babel-jest: 30.5.2(@babel/core@7.29.7)
       chalk: 4.1.2
       ci-info: 4.4.0
       deepmerge: 4.3.1
       glob: 13.0.6
       graceful-fs: 4.2.11
-      jest-circus: 30.5.2(supports-color@8.1.1)
+      jest-circus: 30.5.2
       jest-docblock: 30.5.0
       jest-environment-node: 30.5.2
       jest-regex-util: 30.5.0
       jest-resolve: 30.5.1
-      jest-runner: 30.5.2(supports-color@8.1.1)
+      jest-runner: 30.5.2
       jest-util: 30.5.1
       jest-validate: 30.5.1
       parse-json: 5.2.0
@@ -9844,10 +9918,10 @@ snapshots:
 
   jest-regex-util@30.5.0: {}
 
-  jest-resolve-dependencies@30.5.2(supports-color@8.1.1):
+  jest-resolve-dependencies@30.5.2:
     dependencies:
       jest-regex-util: 30.5.0
-      jest-snapshot: 30.5.2(supports-color@8.1.1)
+      jest-snapshot: 30.5.2
     transitivePeerDependencies:
       - supports-color
 
@@ -9861,13 +9935,13 @@ snapshots:
       slash: 3.0.0
       unrs-resolver: 1.12.2
 
-  jest-runner@30.5.2(supports-color@8.1.1):
+  jest-runner@30.5.2:
     dependencies:
       '@jest/console': 30.5.2
       '@jest/environment': 30.5.2
       '@jest/source-map': 30.5.2
       '@jest/test-result': 30.5.2
-      '@jest/transform': 30.5.2(supports-color@8.1.1)
+      '@jest/transform': 30.5.2
       '@jest/types': 30.5.1
       '@types/node': 20.19.43
       chalk: 4.1.2
@@ -9880,7 +9954,7 @@ snapshots:
       jest-leak-detector: 30.5.1
       jest-message-util: 30.5.1
       jest-resolve: 30.5.1
-      jest-runtime: 30.5.2(supports-color@8.1.1)
+      jest-runtime: 30.5.2
       jest-util: 30.5.1
       jest-watcher: 30.5.2
       jest-worker: 30.5.1
@@ -9888,14 +9962,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  jest-runtime@30.5.2(supports-color@8.1.1):
+  jest-runtime@30.5.2:
     dependencies:
       '@jest/environment': 30.5.2
       '@jest/fake-timers': 30.5.2
-      '@jest/globals': 30.5.2(supports-color@8.1.1)
+      '@jest/globals': 30.5.2
       '@jest/source-map': 30.5.2
       '@jest/test-result': 30.5.2
-      '@jest/transform': 30.5.2(supports-color@8.1.1)
+      '@jest/transform': 30.5.2
       '@jest/types': 30.5.1
       '@types/node': 20.19.43
       chalk: 4.1.2
@@ -9909,26 +9983,26 @@ snapshots:
       jest-mock: 30.5.2
       jest-regex-util: 30.5.0
       jest-resolve: 30.5.1
-      jest-snapshot: 30.5.2(supports-color@8.1.1)
+      jest-snapshot: 30.5.2
       jest-util: 30.5.1
       slash: 3.0.0
       strip-bom: 4.0.0
     transitivePeerDependencies:
       - supports-color
 
-  jest-snapshot@30.5.2(supports-color@8.1.1):
+  jest-snapshot@30.5.2:
     dependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
       '@babel/generator': 7.29.8
-      '@babel/plugin-syntax-jsx': 7.29.7(@babel/core@7.29.7(supports-color@8.1.1))
-      '@babel/plugin-syntax-typescript': 7.29.7(@babel/core@7.29.7(supports-color@8.1.1))
+      '@babel/plugin-syntax-jsx': 7.29.7(@babel/core@7.29.7)
+      '@babel/plugin-syntax-typescript': 7.29.7(@babel/core@7.29.7)
       '@babel/types': 7.29.8
       '@jest/expect-utils': 30.5.2
       '@jest/get-type': 30.5.0
       '@jest/snapshot-utils': 30.5.1
-      '@jest/transform': 30.5.2(supports-color@8.1.1)
+      '@jest/transform': 30.5.2
       '@jest/types': 30.5.1
-      babel-preset-current-node-syntax: 1.2.0(@babel/core@7.29.7(supports-color@8.1.1))
+      babel-preset-current-node-syntax: 1.2.0(@babel/core@7.29.7)
       chalk: 4.1.2
       expect: 30.5.2
       graceful-fs: 4.2.11
@@ -9979,12 +10053,12 @@ snapshots:
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
-  jest@30.5.2(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3)):
+  jest@30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3)):
     dependencies:
-      '@jest/core': 30.5.2(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      '@jest/core': 30.5.2(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
       '@jest/types': 30.5.1
       import-local: 3.2.0
-      jest-cli: 30.5.2(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      jest-cli: 30.5.2(@types/node@20.19.43)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
     transitivePeerDependencies:
       - '@types/node'
       - babel-plugin-macros
@@ -10057,11 +10131,11 @@ snapshots:
 
   keyvaluestorage-interface@1.0.0: {}
 
-  knex@3.3.0(better-sqlite3@13.0.3)(sqlite3@5.1.7(supports-color@8.1.1))(supports-color@8.1.1):
+  knex@3.3.0(better-sqlite3@13.0.3)(sqlite3@5.1.7):
     dependencies:
       colorette: 2.0.19
       commander: 10.0.1
-      debug: 4.3.4(supports-color@8.1.1)
+      debug: 4.3.4
       escalade: 3.2.0
       esm: 3.2.25
       get-package-type: 0.1.0
@@ -10075,7 +10149,7 @@ snapshots:
       tildify: 2.0.0
     optionalDependencies:
       better-sqlite3: 13.0.3
-      sqlite3: 5.1.7(supports-color@8.1.1)
+      sqlite3: 5.1.7
     transitivePeerDependencies:
       - supports-color
 
@@ -10157,13 +10231,13 @@ snapshots:
 
   make-error@1.3.6: {}
 
-  make-fetch-happen@9.1.0(supports-color@8.1.1):
+  make-fetch-happen@9.1.0:
     dependencies:
       agentkeepalive: 4.6.0
       cacache: 15.3.0
       http-cache-semantics: 4.2.0
-      http-proxy-agent: 4.0.1(supports-color@8.1.1)
-      https-proxy-agent: 5.0.1(supports-color@8.1.1)
+      http-proxy-agent: 4.0.1
+      https-proxy-agent: 5.0.1
       is-lambda: 1.0.1
       lru-cache: 6.0.0
       minipass: 3.3.6
@@ -10173,7 +10247,7 @@ snapshots:
       minipass-pipeline: 1.2.4
       negotiator: 0.6.4
       promise-retry: 2.0.1
-      socks-proxy-agent: 6.2.1(supports-color@8.1.1)
+      socks-proxy-agent: 6.2.1
       ssri: 8.0.1
     transitivePeerDependencies:
       - bluebird
@@ -10342,7 +10416,7 @@ snapshots:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
-  next@16.2.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  next@16.2.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       '@next/env': 16.2.1
       '@swc/helpers': 0.5.15
@@ -10351,7 +10425,7 @@ snapshots:
       postcss: 8.4.31
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      styled-jsx: 5.1.6(@babel/core@7.29.7(supports-color@8.1.1))(react@19.3.0)
+      styled-jsx: 5.1.6(@babel/core@7.29.7)(react@19.3.0)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.2.1
       '@next/swc-darwin-x64': 16.2.1
@@ -10389,12 +10463,12 @@ snapshots:
   node-gyp-build@4.8.4:
     optional: true
 
-  node-gyp@8.4.1(supports-color@8.1.1):
+  node-gyp@8.4.1:
     dependencies:
       env-paths: 2.2.1
       glob: 7.2.3
       graceful-fs: 4.2.11
-      make-fetch-happen: 9.1.0(supports-color@8.1.1)
+      make-fetch-happen: 9.1.0
       nopt: 5.0.0
       npmlog: 6.0.2
       rimraf: 3.0.2
@@ -10803,9 +10877,9 @@ snapshots:
 
   range-parser@1.3.0: {}
 
-  rate-limit-redis@4.3.1(express-rate-limit@7.5.1(express@5.2.1(supports-color@8.1.1))):
+  rate-limit-redis@4.3.1(express-rate-limit@7.5.1(express@5.2.1)):
     dependencies:
-      express-rate-limit: 7.5.1(express@5.2.1(supports-color@8.1.1))
+      express-rate-limit: 7.5.1(express@5.2.1)
 
   raw-body@3.0.2:
     dependencies:
@@ -10913,9 +10987,9 @@ snapshots:
 
   require-from-string@2.0.2: {}
 
-  require-in-the-middle@7.5.2(supports-color@8.1.1):
+  require-in-the-middle@7.5.2:
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       module-details-from-path: 1.0.4
       resolve: 1.22.12
     transitivePeerDependencies:
@@ -10956,9 +11030,9 @@ snapshots:
       inherits: 2.0.4
     optional: true
 
-  router@2.2.0(supports-color@8.1.1):
+  router@2.2.0:
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       depd: 2.0.0
       is-promise: 4.0.0
       parseurl: 1.3.3
@@ -11011,9 +11085,9 @@ snapshots:
 
   semver@7.8.5: {}
 
-  send@1.2.1(supports-color@8.1.1):
+  send@1.2.1:
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
@@ -11027,12 +11101,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  serve-static@2.2.1(supports-color@8.1.1):
+  serve-static@2.2.1:
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 1.2.1(supports-color@8.1.1)
+      send: 1.2.1
     transitivePeerDependencies:
       - supports-color
 
@@ -11146,10 +11220,10 @@ snapshots:
 
   smol-toml@1.9.0: {}
 
-  socks-proxy-agent@6.2.1(supports-color@8.1.1):
+  socks-proxy-agent@6.2.1:
     dependencies:
-      agent-base: 6.0.2(supports-color@8.1.1)
-      debug: 4.4.3(supports-color@8.1.1)
+      agent-base: 6.0.2
+      debug: 4.4.3
       socks: 2.8.10
     transitivePeerDependencies:
       - supports-color
@@ -11186,14 +11260,14 @@ snapshots:
 
   sprintf-js@1.0.3: {}
 
-  sqlite3@5.1.7(supports-color@8.1.1):
+  sqlite3@5.1.7:
     dependencies:
       bindings: 1.5.0
       node-addon-api: 7.1.1
       prebuild-install: 7.1.3
       tar: 6.2.1
     optionalDependencies:
-      node-gyp: 8.4.1(supports-color@8.1.1)
+      node-gyp: 8.4.1
     transitivePeerDependencies:
       - bluebird
       - supports-color
@@ -11258,18 +11332,18 @@ snapshots:
 
   strip-json-comments@5.0.3: {}
 
-  styled-jsx@5.1.6(@babel/core@7.29.7(supports-color@8.1.1))(react@19.3.0):
+  styled-jsx@5.1.6(@babel/core@7.29.7)(react@19.3.0):
     dependencies:
       client-only: 0.0.1
       react: 19.3.0
     optionalDependencies:
-      '@babel/core': 7.29.7(supports-color@8.1.1)
+      '@babel/core': 7.29.7
 
-  superagent@10.4.1(supports-color@8.1.1):
+  superagent@10.4.1:
     dependencies:
       component-emitter: 1.3.1
       cookiejar: 2.1.4
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       fast-safe-stringify: 2.1.1
       form-data: 4.0.6
       formidable: 3.5.4
@@ -11279,11 +11353,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  supertest@7.3.0(supports-color@8.1.1):
+  supertest@7.3.0:
     dependencies:
       cookie-signature: 1.2.2
       methods: 1.1.2
-      superagent: 10.4.1(supports-color@8.1.1)
+      superagent: 10.4.1
     transitivePeerDependencies:
       - supports-color
 
