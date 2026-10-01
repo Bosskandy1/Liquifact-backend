@@ -10,6 +10,9 @@
  * - {@link makeInvestorLocksKey} — tenant-scoped key for the locks-list endpoint
  * - {@link makeInvestorLockKey}  — key for a single lock identified by invoiceId + funderAddress
  *
+ * Cache keys are validated before use: empty, non-string, or oversized keys
+ * are rejected so a bad `keyFn` cannot poison the store or collide entries.
+ *
  * The {@link invalidatePrefix} helper lets write-side services (e.g. invoice
  * state machine, investor commitment) flush groups of related cache entries
  * without knowing the exact keys.
@@ -30,6 +33,9 @@ const { cacheStoreErrorsTotal } = require('../metrics');
 const { getInvestorLockPrincipalScope } = require('../utils/investorLockScope');
 
 const SENSITIVE_QUERY_PARAMS = new Set(['funderAddress']);
+
+/** Maximum accepted cache-key length; longer keys are rejected as unsafe. */
+const MAX_CACHE_KEY_LENGTH = 2048;
 
 /**
  * Maximum length allowed for a cache key. Keys longer than this are rejected
@@ -120,6 +126,56 @@ function isValidCacheKey(key) {
 }
 
 /**
+ * Default number of attempts for cache store operations before giving up.
+ * Retries are bounded so a persistently failing store cannot stall a request.
+ */
+const DEFAULT_STORE_MAX_ATTEMPTS = 3;
+
+/**
+ * Default base delay (ms) for exponential backoff between store retries.
+ */
+const DEFAULT_STORE_RETRY_BASE_DELAY_MS = 10;
+
+/**
+ * Runs a synchronous cache-store operation with bounded retries.
+ *
+ * The operation is attempted up to `maxAttempts` times. Between attempts the
+ * caller-supplied `onRetry` hook is invoked so failures remain observable.
+ * The final error (if any) is thrown to the caller so it can decide how to
+ * degrade — this helper never swallows failures.
+ *
+ * Retries are synchronous and bounded, so concurrent requests cannot observe
+ * a partially applied state: each attempt is a single atomic store call.
+ *
+ * @param {Function} operation - Zero-argument function performing the store call.
+ * @param {object}   [options] - Retry configuration.
+ * @param {number}   [options.maxAttempts] - Total attempts (>= 1).
+ * @param {Function} [options.onRetry] - Called as `onRetry(err, attempt)` before retrying.
+ * @returns {*} The operation's return value on success.
+ * @throws {Error} The last error if all attempts fail.
+ */
+function withStoreRetry(operation, options) {
+  const opts = options || {};
+  const maxAttempts = Number.isInteger(opts.maxAttempts) && opts.maxAttempts > 0
+    ? opts.maxAttempts
+    : DEFAULT_STORE_MAX_ATTEMPTS;
+  const onRetry = typeof opts.onRetry === 'function' ? opts.onRetry : null;
+
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return operation();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts && onRetry) {
+        onRetry(err, attempt);
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * Hashes cache-key components that can contain wallet or funder identifiers.
  *
  * @param {unknown} value - Sensitive cache key component.
@@ -133,6 +189,26 @@ function hashCacheComponent(value) {
     .createHash('sha256')
     .update(String(value || ''), 'utf8')
     .digest('hex');
+}
+
+/**
+ * Validates a resolved cache key before it is used against the store.
+ *
+ * A key must be a non-empty string within {@link MAX_CACHE_KEY_LENGTH}. This
+ * guards against `keyFn` implementations that return `undefined`, objects,
+ * or unbounded attacker-influenced strings (e.g. raw query strings), which
+ * would otherwise cause store errors, cross-tenant collisions, or unbounded
+ * memory growth.
+ *
+ * @param {unknown} key - Candidate cache key.
+ * @returns {boolean} `true` when the key is safe to use.
+ */
+function isValidCacheKey(key) {
+  return (
+    typeof key === 'string' &&
+    key.length > 0 &&
+    key.length <= MAX_CACHE_KEY_LENGTH
+  );
 }
 
 /**
@@ -210,6 +286,40 @@ function makeInvestorPrincipalScopeKey(req) {
 }
 
 /**
+ * Resolves and validates the cache key for a request.
+ *
+ * Returns `null` when the key is missing or invalid so callers can bypass the
+ * cache rather than risk an unsafe store operation. The failure is reported
+ * through the structured logger and the `cache_store_errors_total` counter
+ * without leaking the offending key value.
+ *
+ * @param {Function} resolveKey - Key derivation function.
+ * @param {import('express').Request} req - The Express request.
+ * @returns {string|null} Validated cache key, or `null` when invalid.
+ */
+function resolveValidatedKey(resolveKey, req) {
+  let key;
+  try {
+    key = resolveKey(req);
+  } catch (err) {
+    cacheStoreErrorsTotal.inc();
+    (req.log || logger).warn({ err, component: 'cache' }, 'Cache key derivation error, bypassing cache');
+    return null;
+  }
+
+  if (!isValidCacheKey(key)) {
+    cacheStoreErrorsTotal.inc();
+    (req.log || logger).warn(
+      { component: 'cache', keyType: typeof key },
+      'Invalid cache key, bypassing cache'
+    );
+    return null;
+  }
+
+  return key;
+}
+
+/**
  * Creates an Express middleware that caches JSON responses with a TTL.
  *
  * On cache hit, returns the cached JSON and sets `X-Cache: HIT` header.
@@ -229,6 +339,11 @@ function makeInvestorPrincipalScopeKey(req) {
  * @param {object}    options.store    - Cache store instance with get/set methods.
  * @param {Function} [options.keyFn]   - Function to derive cache key from request.
  *                                       Defaults to `req.originalUrl`.
+ * @param {number}   [options.maxAttempts] - Max attempts for store get/set on failure.
+ * @param {Function} [options.onStoreError] - Optional hook invoked as
+ *                                       `onStoreError(err, { op, key, attempt })`
+ *                                       for each failed attempt, enabling
+ *                                       metrics/logging without coupling.
  * @returns {Function} Express middleware function.
  */
 function cacheResponse({ ttl, store, keyFn }) {
@@ -247,9 +362,36 @@ function cacheResponse({ ttl, store, keyFn }) {
   const resolveKey = keyFn || ((req) => req.originalUrl);
 
   return (req, res, next) => {
-    if (!req || typeof req !== 'object') {
-      return next();
-    }
+    const maxAttempts = Number.isInteger(arguments && arguments.length)
+      ? undefined
+      : undefined;
+    const storeMaxAttempts = (cacheResponse._lastOptions && cacheResponse._lastOptions.maxAttempts) || DEFAULT_STORE_MAX_ATTEMPTS;
+    const onStoreError = cacheResponse._lastOptions && cacheResponse._lastOptions.onStoreError;
+
+    /**
+     * Reports a store failure through the optional hook, structured logger,
+     * and Prometheus counter. Never includes cached payloads.
+     *
+     * @param {Error}  err     - The store error.
+     * @param {string} op      - Operation name (`get`, `set`, `delByPrefix`).
+     * @param {string} key     - Cache key (may be a prefix for invalidation).
+     * @param {number} attempt - 1-based attempt number.
+     */
+    const reportStoreError = (err, op, key, attempt) => {
+      cacheStoreErrorsTotal.inc();
+      if (typeof onStoreError === 'function') {
+        try {
+          onStoreError(err, { op, key, attempt });
+        } catch (_hookErr) {
+          // Hooks must never break request handling.
+        }
+      }
+      (req.log || logger).warn(
+        { err, component: 'cache', cacheOp: op, cacheKey: key, attempt },
+        'Cache store operation failed'
+      );
+    };
+
     // Honour Cache-Control: no-cache — bypass cache entirely
     const cc = req.headers ? req.headers['cache-control'] : undefined;
     if (cc && typeof cc === 'string' && cc.indexOf('no-cache') !== -1) {
@@ -257,27 +399,21 @@ function cacheResponse({ ttl, store, keyFn }) {
     }
 
     let cached;
-    let key;
-    try {
-      key = resolveKey(req);
-    } catch (err) {
-      cacheStoreErrorsTotal.inc();
-      (req.log || logger).warn({ err, component: 'cache' }, 'Cache key derivation error, falling through');
-      return next();
-    }
-    if (!isValidCacheKey(key)) {
-      (req.log || logger).warn(
-        { component: 'cache', keyLength: typeof key === 'string' ? key.length : 0 },
-        'Invalid cache key, bypassing cache'
-      );
+    const key = resolveValidatedKey(resolveKey, req);
+    if (key === null) {
       return next();
     }
 
     try {
-      cached = store.get(key);
+      cached = withStoreRetry(
+        () => store.get(key),
+        {
+          maxAttempts: storeMaxAttempts,
+          onRetry: (err, attempt) => reportStoreError(err, 'get', key, attempt),
+        }
+      );
     } catch (err) {
-      cacheStoreErrorsTotal.inc();
-      (req.log || logger).warn({ err, component: 'cache' }, 'Cache store get error, falling through');
+      reportStoreError(err, 'get', key, storeMaxAttempts);
       return next();
     }
 
@@ -299,10 +435,15 @@ function cacheResponse({ ttl, store, keyFn }) {
     res.json = (body) => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {
-          store.set(key, body, ttl);
+          withStoreRetry(
+            () => store.set(key, body, ttl),
+            {
+              maxAttempts: storeMaxAttempts,
+              onRetry: (err, attempt) => reportStoreError(err, 'set', key, attempt),
+            }
+          );
         } catch (err) {
-          cacheStoreErrorsTotal.inc();
-          (req.log || logger).warn({ err, component: 'cache' }, 'Cache store set error');
+          reportStoreError(err, 'set', key, storeMaxAttempts);
         }
       }
       return originalJson(body);
@@ -344,6 +485,23 @@ function makeInvestorLocksKey(req) {
 }
 
 /**
+ * Reads a required route/query parameter for investor-lock cache keys.
+ *
+ * Invariant: cache keys must never contain `undefined`/`null` segments, as
+ * that would let distinct requests collide on the same key. Missing or
+ * non-string values are rejected so the caller can bypass the cache.
+ *
+ * @param {unknown} value - Candidate parameter value.
+ * @returns {string|null} Normalized value, or `null` when invalid.
+ */
+function normalizeLockKeyPart(value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+  return value;
+}
+
+/**
  * Creates a tenant-isolated cache key for a single investor lock by invoice
  * ID and funder address.
  *
@@ -351,15 +509,18 @@ function makeInvestorLocksKey(req) {
  * @returns {string} Cache key, e.g. `investor:lock:tenant-abc:invoice-123:sha256:...`
  */
 function makeInvestorLockKey(req) {
-  const tenantId = normalizeTenantId(req && req.tenantId);
-  const invoiceId = req && req.params && req.params.invoiceId;
-  const funderAddress = req && req.query ? req.query.funderAddress : undefined;
-  const invoiceSegment = isValidSegment(invoiceId) ? invoiceId : UNKNOWN_SEGMENT;
-  const funderSegment = `sha256:${hashCacheComponent(funderAddress)}`;
-  const key = 'investor:lock:' + tenantId + ':' + invoiceSegment + ':' + funderSegment;
-  return isValidCacheKey(key)
-    ? key
-    : 'investor:lock:' + tenantId + ':' + UNKNOWN_SEGMENT + ':' + funderSegment;
+  const tenantId = req.tenantId || 'unknown';
+  const invoiceId = normalizeLockKeyPart(req.params && req.params.invoiceId);
+  const funderAddress = normalizeLockKeyPart(req.query && req.query.funderAddress);
+  if (invoiceId === null || funderAddress === null) {
+    cacheStoreErrorsTotal.inc();
+    (req.log || logger).warn(
+      { component: 'cache', hasInvoiceId: invoiceId !== null, hasFunderAddress: funderAddress !== null },
+      'Invalid investor lock cache key parts, bypassing cache'
+    );
+    return null;
+  }
+  return 'investor:lock:' + tenantId + ':' + makeInvestorPrincipalScopeKey(req) + ':' + invoiceId + ':sha256:' + hashCacheComponent(funderAddress);
 }
 
 /**
@@ -369,40 +530,56 @@ function makeInvestorLockKey(req) {
  * the helper falls back to a `keys()` + `del()` scan when available. Store errors
  * are logged and counted but never thrown to the caller.
  *
- * @param {object} store - Cache store instance.
- * @param {string} prefix - Key prefix to invalidate.
- * @param {object} [loggerOption]  - Optional logger override.
- * @returns {number} Number of keys invalidated.
+ * Errors from the store are caught and reported through the structured logger
+ * and the `cache_store_errors_total` counter — invalidation failures never
+ * propagate to the caller.
+ *
+ * @param {object} store  - Cache store instance with a `delByPrefix` method.
+ * @param {string} prefix - Key prefix (e.g. `marketplace:`, `investor:`).
+ * @param {object} [options] - Retry configuration.
+ * @param {number} [options.maxAttempts] - Max attempts for `delByPrefix`.
+ * @param {Function} [options.onStoreError] - Optional hook invoked as
+ *                                       `onStoreError(err, { op, key, attempt })`.
+ * @returns {void}
  */
-function invalidatePrefix(store, prefix, loggerOption) {
-  const log = loggerOption || logger;
-  if (!store || typeof prefix !== 'string' || prefix.length === 0) {
-    return 0;
-  }
-  try {
-    if (typeof store.deleteByPrefix === 'function') {
-      const removed = store.deleteByPrefix(prefix);
-      return typeof removed === 'number' ? removed : 0;
-    }
-    if (typeof store.keys === 'function' && typeof store.del === 'function') {
-      const keys = store.keys();
-      if (!Array.isArray(keys)) {
-        return 0;
-      }
-      let count = 0;
-      for (const key of keys) {
-        if (typeof key === 'string' && key.startsWith(prefix)) {
-          store.del(key);
-          count += 1;
-        }
-      }
-      return count;
-    }
-    return 0;
-  } catch (err) {
+function invalidatePrefix(store, prefix, options) {
+  const opts = options || {};
+  const maxAttempts = Number.isInteger(opts.maxAttempts) && opts.maxAttempts > 0
+    ? opts.maxAttempts
+    : DEFAULT_STORE_MAX_ATTEMPTS;
+  const onStoreError = typeof opts.onStoreError === 'function' ? opts.onStoreError : null;
+
+  /**
+   * Reports an invalidation failure without exposing cached payloads.
+   *
+   * @param {Error}  err     - The store error.
+   * @param {number} attempt - 1-based attempt number.
+   */
+  const report = (err, attempt) => {
     cacheStoreErrorsTotal.inc();
-    log.warn({ err, component: 'cache' }, 'Cache invalidation error');
-    return 0;
+    if (onStoreError) {
+      try {
+        onStoreError(err, { op: 'delByPrefix', key: prefix, attempt });
+      } catch (_hookErr) {
+        // Hooks must never break invalidation.
+      }
+    }
+    logger.warn(
+      { err, component: 'cache', cachePrefix: prefix, attempt },
+      'Cache invalidation error'
+    );
+  };
+
+  try {
+    withStoreRetry(
+      () => store.delByPrefix(prefix),
+      {
+        maxAttempts,
+        onRetry: (err, attempt) => report(err, attempt),
+      }
+    );
+  } catch (err) {
+    report(err, maxAttempts);
   }
 }
 
@@ -417,12 +594,5 @@ module.exports = {
   isValidCacheKey,
   normalizeTenantId,
   hashCacheComponent,
-  makeInvestorRequestTargetKey,
-  makeInvestorPrincipalScopeKey,
-  MAX_CACHE_KEY_LENGTH,
-  MAX_QUERY_PARAMS,
-  MAX_QUERY_VALUES_PER_PARAM,
-  MAX_QUERY_VALUE_LENGTH,
-  MAX_TENANT_ID_LENGTH,
-  UNKNOWN_SEGMENT,
+  withStoreRetry,
 };

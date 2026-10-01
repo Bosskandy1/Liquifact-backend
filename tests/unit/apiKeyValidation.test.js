@@ -558,6 +558,14 @@ describe('config/apiKeys — KNOWN_ENTRY_FIELDS', () => {
   it('contains the four expected fields', () => {
     expect(KNOWN_ENTRY_FIELDS).toEqual(new Set(['key', 'clientId', 'scopes', 'revoked']));
   });
+
+  it('does not let mutations to the exported Set weaken validation', () => {
+    KNOWN_ENTRY_FIELDS.add('admin');
+    expect(() => validateEntry({
+      key: 'lf_validkey001', clientId: 'svc', scopes: ['invoices:read'], admin: true,
+    }, 0)).toThrow(/unknown field/);
+    KNOWN_ENTRY_FIELDS.delete('admin');
+  });
 });
 
 // ── parseValidationErrors helper ─────────────────────────────────────────────

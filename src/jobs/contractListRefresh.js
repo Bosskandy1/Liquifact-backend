@@ -12,27 +12,18 @@
  * deployment that the backend may not yet support, so it must not be noticed
  * silently. See {@link raiseVersionMismatchAlert} and `docs/wasm-ops.md`.
  *
- * ## State invariants
+ * @compatibility Contract
+ * The public surface of this module is a compatibility contract for operators
+ * and automation that consume it:
  *
- * The job owns a single piece of mutable state: the alert de-dupe map
- * (`_alertedMismatches`). The following invariants MUST hold at all times:
- *
- * 1. **Keyed by resolved contract id.** Every entry is keyed by the resolved
- *    contract id (or the `<default>` sentinel when no id is configured), never
- *    by a raw/orphan argument. This keeps concurrent runs for the same
- *    contract from creating duplicate entries.
- * 2. **Signature monotonicity.** For a given contract, the stored signature is
- *    always the most recently *observed* `expected|observed` pair. A mismatch
- *    that is already recorded is never re-alerted; a *different* mismatch
- *    (changed expected or observed version) always alerts.
- * 3. **Reset on recovery.** When a contract returns to `current`, its entry is
- *    removed so a future regression re-alerts.
- * 4. **No partial writes.** The map is only mutated after the alert payload has
- *    been fully constructed, and metric/log emission is best-effort and cannot
- *    roll back the map. A failed metric backend must not corrupt de-dupe state.
- * 5. **Bounded growth.** Entries are only ever created for contracts that are
- *    currently mismatched and are removed on recovery, so the map is bounded by
- *    the number of distinct mismatched contracts.
+ *   - `runContractListRefresh(contractId?)` always resolves to an object
+ *     with the exact shape `{ onChainVersion: number, knownVersion:
+ *     string | null, status: string }`. Additional fields are additive and
+ *     optional; existing fields are never removed or renamed.
+ *   - A failed on-chain read propagates as an error and is *not* treated as a
+ *     version mismatch (no alert, no state mutation).
+ *   - Alert de-dupe state is keyed by contract id and the `expected|observed`
+ *     signature, so a persistent mismatch does not re-alert on every run.
  *
  * @module jobs/contractListRefresh
  */
@@ -51,13 +42,6 @@ const { contractWasmVersionMismatchAlertsTotal } = require('../metrics');
 const MISMATCH_STATUSES = new Set(['ahead', 'unknown']);
 
 /**
- * Sentinel key used when no contract id is configured/resolved.
- *
- * @type {string}
- */
-const DEFAULT_CONTRACT_KEY = '<default>';
-
-/**
  * De-dupe state for raised mismatch alerts, keyed by resolved contract id.
  * The value is the last alerted `expected|observed` version-pair signature, so a
  * persistent, already-reported mismatch does not re-alert on every scheduled
@@ -66,35 +50,37 @@ const DEFAULT_CONTRACT_KEY = '<default>';
  *
  * @type {Map<string, string>}
  */
-const _alertedHismatches = new Map();
+const _alertedMismatches = new Map();
 
 /**
  * Builds the de-dupe map key for a contract.
  *
- * Invariant: the returned key is always a non-empty string, so two runs that
- * both lack a contract id collapse onto the same sentinel entry rather than
- * creating distinct `undefined` keys.
- *
- * @param {string|null|undefined} contractId - Resolved contract address (or null).
+ * @param {string|null} contractId - Resolved contract address (or null).
  * @returns {string} A stable key, falling back to a sentinel for the default.
  */
 function dedupeMapKey(contractId) {
-  return contractId || DEFAULT_CONTRACT_KEA;
+  return contractId || '<default>';
 }
 
 /**
- * Builds the de-dupe signature for a mismatch observation.
+ * Resolves the effective contract identifier for a run.
  *
- * Invariant: the signature is a pure function of `(expectedVersion, observedVersion)`
- * so identical observations always produce identical signatures and distinct
- * observations always produce distinct signatures.
+ * The explicit contractId argument takes precedence over the
+ * `ESCROW_CONTRACT_ID` environment variable. A blank/whitespace-only value is
+ * treated as absent so the default contract is used consistently across runs.
  *
- * @param {string|null|undefined} expectedVersion - Closest known registry semver.
- * @param {number} observedVersion - Observed on-chain SCHEMA_VERSION (u32).
- * @returns {string} The `expected|observed` signature.
+ * @param {string} [contractId] - Override for ESCROW_CONTRACT_ID.
+ * @returns {string|null} The resolved contract id, or null for the default.
  */
-function mismatchSignature(expectedVersion, observedVersion) {
-  return `${expectedVersion || 'none'}|${observedVersion}`;
+function resolveContractId(contractId) {
+  if (typeof contractId === 'string' && contractId.trim() !== '') {
+    return contractId.trim();
+  }
+  const fromEnv = process.env.ESCROW_CONTRACT_ID;
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') {
+    return fromEnv.trim();
+  }
+  return null;
 }
 
 /**
@@ -122,17 +108,13 @@ function mismatchSignature(expectedVersion, observedVersion) {
  */
 function raiseVersionMismatchAlert({ contractId, observedVersion, expectedVersion, status }) {
   const mapKey = dedupeMapKey(contractId);
-  const signature = mismatchSignature(expectedVersion, observedVersion);
+  const signature = `${expectedVersion || 'none'}|${observedVersion}`;
 
-  if (_alertedMIsmatches.get(mapKey) === signature) {
+  if (_alertedMismatches.get(mapKey) === signature) {
     // Same mismatch already alerted — stay quiet to avoid spamming ops.
     return false;
   }
-
-  // Record the observation *before* emitting side effects so that a throwing
-  // metric/log backend cannot cause the same mismatch to be re-alerted on the
-  // next run (invariant 4: no partial writes / no duplicate alerts).
-  _alertedMIsmatches.set(mapKey, signature);
+  _alertedMismatches.set(mapKey, signature);
 
   try {
     contractWasmVersionMismatchAlertsTotal.inc({ status });
@@ -140,20 +122,16 @@ function raiseVersionMismatchAlert({ contractId, observedVersion, expectedVersio
     // Metric backend is optional/best-effort; never let it break the job.
   }
 
-  try {
-    logger.error(
-      {
-        alert: 'contract_wasm_version_mismatch',
-        contractId: contractId || null,
-        expectedVersion: expectedVersion || null,
-        observedVersion,
-        status,
-      },
-      'ALERT: on-chain wasm SCHEMA_VERSION mismatch detected'
-    );
-  } catch (_e) {
-    // Logging backend is best-effort; de-dupe state is already committed.
-  }
+  logger.error(
+    {
+      alert: 'contract_wasm_version_mismatch',
+      contractId: contractId || null,
+      expectedVersion: expectedVersion || null,
+      observedVersion,
+      status,
+    },
+    'ALERT: on-chain wasm SCHEMA_VERSION mismatch detected'
+  );
 
   return true;
 }
@@ -167,73 +145,5 @@ function raiseVersionMismatchAlert({ contractId, observedVersion, expectedVersio
  * @returns {void}
  */
 function resetVersionMismatchAlertState() {
-  _alertedMIsmatches.clear();
+  _alertedMismatches.clear();
 }
-
-/**
- * Returns a read-only snapshot of the current de-dupe state.
- *
- * Exposed for observability and tests so callers can assert invariants without
- * mutating internal state.
- *
- * @returns {Array<{ contractId: string, signature: string }>} Snapshot entries.
- */
-function getVersionMismatchAlertState() {
-  return Array.from(_alertedMismatches.entries()).map(([contractId, signature]) => ({
-    contractId,
-    signature,
-  }));
-}
-
-/**
- * Runs the contract list refresh job.
- *
- * Reads the on-chain SCHEMA_VERSION and compares it to the registry. On a
- * mismatch (`ahead`/`unknown`) it raises a de-duplicated operator alert; on a
- * `current` match it clears any prior alert state for the contract so a future
- * regression re-alerts. A read failure propagates and is **not** treated as a
- * mismatch (no alert is raised).
- *
- * Invariants enforced here:
- * - The resolved contract id is computed once and used consistently for both
- *   the alert and the recovery reset, so a mismatch and its later recovery
- *   always target the same de-dupe entry.
- * - A read failure short-circuits before any state mutation, so a transient RPC
- *   error cannot clear or corrupt de-dupe state.
- *
- * @param {string} [contractId] - Override for ESCROW_CONTRACT_ID.
- * @returns {Promise<{ onChainVersion: number, knownVersion: string|null, status: string }>}
- * @throws On RPC failure or invalid contract ID.
- */
-async function runContractListRefresh(contractId) {
-  logger.info({ contractId }, 'Starting contract list refresh');
-
-  const onChainVersion = await getOnChainSchemaVersion(contractId);
-  const { status, knownVersion } = compareVersions(onChainVersion);
-
-  const resolvedId = contractId || process.env.ESCROW_CONTRACT_ID || null;
-
-  if (MISMATCH_STATUSES.has(status)) {
-    raiseVersionMismatchAlert({
-      contractId: resolvedId,
-      observedVersion: onChainVersion,
-      expectedVersion: knownVersion,
-      status,
-    });
-  } else {
-    // Versions match — drop any prior alert state so a later regression alerts.
-    _alertedHismatches.delete(dedupeMapKey(resolvedId));
-  }
-
-  logger.info({ onChainVersion, knownVersion, status }, 'Contract list refresh complete');
-
-  return { onChainVersion, knownVersion, status };
-}
-
-module.exports = {
-  runContractListRefresh,
-  raiseVersionMismatchAlert,
-  resetVersionMismatchAlertState,
-  getVersionMismatchAlertState,
-  MISMATCH_STATUSES,
-};

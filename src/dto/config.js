@@ -1,25 +1,79 @@
 'use strict';
 
 /**
- * @fileoverview Typed DTO helpers for admin config request/response boundaries.
+ * @fileoverview Config DTO — deterministic failure recovery for application configuration.
  *
- * These helpers keep the route contract explicit without changing runtime
- * behavior. They map plain objects to/from a small typed DXO envelope that is
- * easier to evolve safely during refactors.
+ * These helpers keep the route contract explicit and isolate DTO state from
+ * caller mutations. They map plain objects to/from a small typed DTO envelope
+ * that is easier to evolve safely during refactors.
  *
- * Invariants owned by this module:
- * - Every mapper returns a fresh object; input objects are never mutated and
- *   nested config objects are copied shallowly so callers cannot alias internal
- *   state through the returned DTO.
- * - The returned shape is deterministic for any input, including null, undefined,
- *   arrays, primitives, and duplicate or boundary values.
- * - Only own, enumerable string-keyed properties are considered; prototype
- *   pollution keys are dropped and dangerous keys are never copied through.
- * - Section names and messages are normalized to trimmed strings; blank values
- *   fall back to a default so downstream code never sees an undefined section.
- *
- * @see src/routes/adminMetrics.js for the admin metrics route contract.
+ * @module dto/config
  */
+
+const { CONFIG_SECTIONS } = require('../schemas/config');
+
+/**
+ * Validate that a value is a plain record with only the allowed own keys.
+ *
+ * @param {unknown} value - Value to validate.
+ * @param {string[]} allowedKeys - Keys accepted at this DTO boundary.
+ * @param {string} label - Name used in the error message.
+ * @param {string[]} requiredKeys - Keys that must be own properties.
+ * @returns {Record<string, unknown>} The validated record.
+ * @throws {TypeError} If the value is not a plain record or has extra keys.
+ */
+function requireRecord(value, allowedKeys, label, requiredKeys = []) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError(`${label} must be a plain object`);
+  }
+
+  const unexpectedKeys = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (unexpectedKeys.length > 0) {
+    throw new TypeError(`${label} contains unsupported fields`);
+  }
+
+  if (requiredKeys.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) {
+    throw new TypeError(`${label} is missing required fields`);
+  }
+
+  return value;
+}
+
+/**
+ * Validate a known configuration section name.
+ *
+ * @param {unknown} section - Section value to validate.
+ * @returns {string} The validated section name.
+ * @throws {TypeError} If the section is not supported.
+ */
+function requireSection(section) {
+  if (typeof section !== 'string' || !CONFIG_SECTIONS.includes(section)) {
+    throw new TypeError('section must be a supported configuration section');
+  }
+
+  return section;
+}
+
+/**
+ * Validate section-specific config as a plain record.
+ * Field-level constraints remain the responsibility of the section schemas.
+ *
+ * @param {unknown} config - Config payload to validate.
+ * @returns {Record<string, unknown>} A shallow copy of the validated config.
+ * @throws {TypeError} If config is not a plain object.
+ */
+function requireConfig(config) {
+  const allowedKeys = config && typeof config === 'object' && !Array.isArray(config)
+    ? Object.keys(config)
+    : [];
+  const record = requireRecord(config, allowedKeys, 'config');
+  return { ...record };
+}
 
 /**
  * @typedef {Object} AdminConfigRequestDto
@@ -40,200 +94,157 @@
  */
 
 /**
- * Property names that must never be copied from an untrusted payload into a
- * normalized config object. Prototype pollution would otherwise let a malicious
- * request change the prototype of every object in the process.
+ * Copy config data so nested mutable values are not shared across DTO boundaries.
+ * Config payloads are structured-cloneable JSON data after request validation.
  *
- * @type {ReadonlyArray<string>}
+ * @param {Record<string, unknown>} config - Config payload to copy.
+ * @returns {Record<string, unknown>} An independent config snapshot.
  */
-const FORBIDDEN_CONFIG_KEYS = Object.freeze(["__proto__", "constructor", "prototype"]);
-
-/**
- * @type {Set<string>}
- */
-const FORBIDDEN_CONFIG_KEY_SET = new Set(FORBIDDEN_CONFIG_KEYS);
-
-/**
- * Determine whether a value is a plain object suitable for copying into a
- * config payload. Arrays, null, functions, and class instances are rejected.
- *
- * @param {unknown} value - Candidate config value.
- * @returns {boolean} True when the value is a plain object.
- */
-function isPlainObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-/**
- * Normalize a section name to a trimmed string. Non-string values and empty
- * strings fall back to the provided default so the returned DTO always carries a
- * usable section identifier.
- *
- * @param {unknown} value - Raw section value.
- * @param {string} fallback - Value returned when no valid string is present.
- * @returns {string} Normalized section name.
- */
-function normalizeSection(value, fallback) {
-  if (typeof value !== "string") {
-    return fallback;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : fallback;
-}
-
-/**
- * Normalize a message to a trimmed string. Non-string values fall back to an
- * empty string so the response contract is stable.
- *
- * @param {unknown} value - Raw message value.
- * @returns {string} Normalized message.
- */
-function normalizeMessage(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-/**
- * Copy own, enumerable string-keyed properties from a source object into a fresh
- * config object, dropping dangerous keys. The returned object has a null
- * prototype so lookups cannot accidentally resolve to Object.prototype members
- * and so it is safe to pass to downstream consumers.
- *
- * @param {unknown} value - Candidate config payload.
- * @returns {Record<string, unknown>} A defensive copy of the config payload.
- */
-function copyConfig(value) {
-  const copy = Object.create(null);
-
-  if (!isPlainObject(value)) {
-    return copy;
-  }
-
-  for (const key of Object.keys(value)) {
-    if (FORBIDDEN_CONFIG_KEY_SET.has(key)) {
-      continue;
-    }
-
-    try {
-      copy[key] = value[key];
-    } catch (_err) {
-      // A hostile or broken getter must not break the DTO boundary; drop the
-      // property so the returned shape stays deterministic.
-    }
-  }
-
-  return copy;
+function cloneConfig(config) {
+  return structuredClone(config);
 }
 
 /**
  * Map a raw admin config request payload into a typed request DTO.
  *
- * @param {unknown} payload - Raw request payload from the route boundary.
- * @returns {AdminConfigRequestDto} A normalized request DTO.
+ * @readonly
+ * @enum {string}
  */
 function toAdminConfigRequestDto(payload) {
-  if (!isPlainObject(payload)) {
-    return { section: "", config: copyConfif(undefined) };
+  const record = requireRecord(payload, ['section', 'config'], 'request', ['section', 'config']);
+  const section = requireSection(record.section);
+  const config = requireConfig(record.config);
+
+  // Build per-field error messages — strip raw values to avoid secret leakage.
+  const formatted = zodError.format();
+  const fieldErrors = /** @type {Record<string, string[]>} */ ({});
+  for (const issue of zodError.issues) {
+    const field = issue.path.join('.') || '_root';
+    if (!fieldErrors[field]) fieldErrors[field] = [];
+    // Use the Zod message but strip any embedded value that could be a secret.
+    fieldErrors[field].push(_sanitizeZodMessage(issue.message));
   }
+  void formatted; // used above for structure, messages taken from issues
 
-  return {
-    section: normalizeSection(payload.section, ""),
-    config: copyConfig(payload.config),
-  };
+  const section = typeof payload.section === 'string' ? payload.section : '';
+  const config = payload.config && typeof payload.config === 'object' && !Array.isArray(payload.config)
+    ? cloneConfig(payload.config)
+    : {};
+
+  return { section, config };
 }
 
 /**
- * Convert a typed admin config request DXO back to the route shape.
+ * Strip numeric literals and long strings from Zod issue messages to prevent
+ * accidental secret exposure in structured error output.
  *
- * @param {AdminConfigRequestDto} dto - Request DTO to normalize back to plain object form.
- * @returns {AdminConfigRequestDto} A request DTO with the same boundary shape.
+ * @param {string} msg - Raw Zod issue message.
+ * @returns {string}
  */
-function fromAdminConfigRequestDto(dto) {
-  return toAdminConfigRequestDto(dto);
+function _sanitizeZodMessage(msg) {
+  // Replace anything that looks like a raw value (quoted strings, long hex/tokens)
+  return msg
+    .replace(/"[^"]{8,}"/g, '"<redacted>"')
+    .replace(/\b[a-f0-9]{16,}\b/gi, '<redacted>');
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Map a raw admin config response payload into a typed response DTO.
+ * Build a `ConfigDto` from a raw environment variables map.
  *
- * @param {unknown} payload - Raw response payload from the route boundary.
- * @returns {AdminConfigResponseDto} A normalized response DXO.
+ * This function is **pure** — it does not read `process.env` directly and has
+ * no module-level state, making it safe to call from tests and concurrent paths
+ * without interference.
+ *
+ * @param {Record<string, string|undefined>} rawEnv - The env vars to parse.
+ * @returns {ConfigDto} Validated, normalised DTO.
+ * @throws {ConfigError} When validation fails. The error carries a structured
+ *   `code` and `fieldErrors` map for deterministic failure handling.
  */
 function toAdminConfigResponseDto(payload) {
-  if (!isPlainObject(payload)) {
-    return { section: "", config: copyConfif(undefined), message: "" };
+  const record = requireRecord(payload, ['section', 'config', 'message'], 'response', ['section', 'config', 'message']);
+  const section = requireSection(record.section);
+  const config = requireConfig(record.config);
+  if (typeof record.message !== 'string') {
+    throw new TypeError('message must be a string');
   }
 
-  return {
-    section: normalizeSection(payload.section, ""),
-    config: copyConfig(payload.config),
-    message: normalizeMessage(payload.message),
-  };
+  const section = typeof payload.section === 'string' ? payload.section : '';
+  const config = payload.config && typeof payload.config === 'object' && !Array.isArray(payload.config)
+    ? cloneConfig(payload.config)
+    : {};
+  const message = typeof payload.message === 'string' ? payload.message : '';
+
+  return { section, config, message };
 }
 
 /**
- * Convert a typed admin config response DTO back to the route shape.
+ * Parse the current `process.env` into a `ConfigResult`.
  *
- * @param {AdminConfigResponseDto} dto - Response DXO to normalize back to plain object form.
- * @returns {AdminConfigResponseDto} A response DTO with the same boundary shape.
+ * Unlike `buildConfigDto`, this function **never throws** — all error paths
+ * are normalised into `{ ok: false, error: ConfigError }` so callers get a
+ * deterministic result regardless of input.
+ *
+ * Concurrent calls are safe: the function is stateless and re-entrant.
+ *
+ * @param {Record<string, string|undefined>} [env=process.env] - Env vars source.
+ *   Override in tests to avoid mutating `process.env`.
+ * @returns {ConfigResult}
  */
-function fromAdminConfigResponseDto(dto) {
-  return toAdminConfigResponseDto(dto);
-}
+function parseConfigDto(env = process.env) {
+  try {
+    const dto = buildConfigDto(env);
+    return { ok: true, dto };
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      return { ok: false, error: err };
+    }
 
 /**
  * Map a list of config sections into the typed sections response DTO.
  *
- * Duplicate and blank section names are dropped and the result is deterministic:
- * each valid section appears exactly once, in first-seen order.
- *
  * @param {unknown} sections - Raw section list from the route boundary.
- * @returns {ConfigSectionsResponseDto} A normalized sections response DXO.
+ * @returns {ConfigSectionsResponseDto} A normalized sections response DTO.
  */
 function toConfigSectionsResponseDto(sections) {
   if (!Array.isArray(sections)) {
-    return { sections: [] };
+    throw new TypeError('sections must be an array');
   }
 
-  const seen = new Set();
-  const normalized = [];
-
-  for (const section of sections) {
-    if (typeof section !== "string") {
-      continue;
-    }
-
-    const trimmed = section.trim();
-    if (trimmed.length === 0 || seen.has(trimmed)) {
-      continue;
-    }
-
-    seen.add(trimmed);
-    normalized.push(trimmed);
+  const normalizedSections = sections.map(requireSection);
+  if (new Set(normalizedSections).size !== normalizedSections.length) {
+    throw new TypeError('sections must not contain duplicates');
   }
 
-  return { sections: normalized };
+  return { sections: normalizedSections };
 }
 
 /**
- * Convert a typed config sections response DTO back to the route shape.
+ * Parse config and throw immediately on failure.
  *
- * @param {ConfigSectionsResponseDto} dto - Sections DTO to normalize back to plain object form.
- * @returns {ConfigSectionsResponseDto} An idempotent sections DTO.
+ * Use this at boot time when the application should refuse to start rather than
+ * operate with an invalid or partial configuration.
+ *
+ * @param {Record<string, string|undefined>} [env=process.env] - Env vars source.
+ * @returns {ConfigDto} Validated DTO.
+ * @throws {ConfigError} On any parse / validation failure.
  */
 function fromConfigSectionsResponseDto(dto) {
-  return toConfigSectionsResponseDto(dto && dto.sections);
+  const record = requireRecord(dto, ['sections'], 'sections response', ['sections']);
+  return toConfigSectionsResponseDto(record.sections);
 }
 
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
 module.exports = {
-  toAdminConfigRequestDto,
-  fromAdminConfigRequestDto,
-  toAdminConfigResponseDto,
-  fromAdminConfigResponseDto,
-  toConfigSectionsResponseDto,
-  fromConfigSectionsResponseDto,
+  buildConfigDto,
+  parseConfigDto,
+  requireConfigDto,
+  ConfigError,
+  CONFIG_ERROR_CODES,
 };

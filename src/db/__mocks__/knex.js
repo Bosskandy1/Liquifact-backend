@@ -264,3 +264,5 @@ db.fn = {
 };
 
 module.exports = db;
+module.exports.DatabaseLifecycleError = DatabaseLifecycleError;
+module.exports.DB_STATE = DB_STATE;

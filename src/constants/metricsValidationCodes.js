@@ -1,5 +1,441 @@
 'use strict';
 
 /**
- * @fileoverview Machine-readable error codes for metrics request validation.
- *CiAqICMjIFdoeSB0aGlzIGV4aXN0cwogKiBCZWZvcmUgdGhpcyBtb2R1bGUsIGEgbWV0cmljcyB2YWxpZGF0aW9uIGZhaWx1cmUgcmV0dXJuZWQgb25seSBodW1hbi1yZWFkYWJsZQogKiBzdHJpbmdzIGluIGBmaWVsZEVycm9yc2AgKGUuZy4gYCJ0ZW5hbnRJZCBtdXN0IG5vdCBleGNlZWQgMTI4IGNoYXJhY3RlcnMiYCkuCiAqIENsaWVudHMgdGhhdCB3YW50ZWQgdG8gcmVhY3QgZGlmZmVyZW50bHkgdG8gYSAqdHlwZSogZXJyb3IgdGhhbiB0byBhICpyYW5nZSoKICogZXJyb3IgaGFkIHRvIHN0cmluZy1tYXRjaCB0aG9zZSBtZXNzYWdlcywgd2hpY2ggc2lsZW50bHkgYnJlYWtzIHdoZW5ldmVyIHRoZQogKiB3b3JkaW5nIGNoYW5nZXMuCiAqCiAqIEV2ZXJ5IG1ldHJpY3MgdmFsaWRhdGlvbiBmYWlsdXJlIG5vdyBjYXJyaWVzIGEgc3RhYmxlIGNvZGUgZnJvbQogKiB7QGxpbmsgTUVUUklDU19WQUxJREFUSU9OX0NPREVTfSwgYm90aCBhdCB0aGUgdG9wIGxldmVsIG9mIHRoZSBwcm9ibGVtCiAqIGRvY3VtZW50IChgY29kZWApIGFuZCBwZXItZmllbGQgKGBmaWVsZENvZGVzYCkuIE1lc3NhZ2Ugd29yZGluZyByZW1haW5zIGZyZWUKICogdG8gY2hhbmdlOyB0aGUgY29kZXMgYXJlIHRoZSBjb250cmFjdC4KICoKICogQG1vZHVsZSBjb25zdGFudHMvbWV0cmljc1ZhbGlkYXRpb25Db2RlcwogKi8KCi8qKgogKiBCb3VuZGVkIHNldCBvZiBwZXItaXNzdWUgdmFsaWRhdGlvbiBjb2Rlcy4KICoKICogVGhlc2UgZGVzY3JpYmUgKndoeSBhIHNwZWNpZmljIGZpZWxkIGZhaWxlZCosIGFuZCBhcmUgcmVwb3J0ZWQgaW4gdGhlCiAqIGBmaWVsZENvZGVzYCBleHRlbnNpb24gb2YgdGhlIHByb2JsZW0gZG9jdW1lbnQuCiAqCiAqIEBwYXJhbSB7c3RyaW5nfSB2YWx1ZQogKiBAcmV0dXJucyB7Ym9vbGVhbn0KICovCmZ1bmN0aW9uIGlzS25vd25Db2RlKHZhbHVlKSB7CiAgcmV0dXJuIHR5cGVvZiB2YWx1ZSA9PT0gJ3N0cmluZycgJiYgS05PV05fQ09ERVMuaGFzKHZhbHVlKTsKfQoKLyoqCiAqIEB0eXBlZGVmIHsnRkFMTF9CQUNLJyB8ICdSRVFVSVJFJyB8ICdUWVBFJyB8ICdSQU5HRScgfCAnRk9STUFUJyB8ICdVTktOT1dOJyB8ICdDVVNUT00nfSBNZXRyaWNzQ29kZUNhdGVnb3J5CiAqLwoKLyoqCiAqIENhdGVnb3JpemVzIGEgdmFsaWRhdGlvbiBjb2RlIGZvciBvYnNlcnZhYmlsaXR5IGFuZCBjbGllbnQgcm91dGluZy4KICoKICogVGhpcyBtYXBwaW5nIGlzIGRlbGliZXJhdGVseSBleGhhdXN0aXZlIGFuZCBmcm96ZW46IGFkZGluZyBhIG5ldyBjb2RlIHRvCiAqIHtAbGluayBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVN9IHdpdGhvdXQgYWRkaW5nIGl0IGhlcmUgd2lsbCBmYWlsIHRoZQogKiBpbnZhcmlhbnQgY2hlY2sgYmVsb3csIHNvIGEgY29kZSBjYW4gbmV2ZXIgc2lsZW50bHkgbWlzcyBpdHMgY2F0ZWdvcnkuCiAqCiAqIEB0eXBlIHtPYmplY3Q8c3RyaW5nLCBNZXRyaWNzQ29kZUNhdGVnb3J5Pn0KICovCmNvbnN0IE1FVFJJQ1NfQ09ERV9DQVRFR09SSUVTID0gT2JqZWN0LmZyZWV6ZSh7CiAgRklFTERfUkVRVUlSRUQ6ICdSRVFVSVJFJywKICBGSUVMRF9UWVBFX0lOVkFMSUQ6ICdUWVBFJywKICBGSUVMRF9UT09fU0hPUlQ6ICdSQU5HRScsCiAgRklFTERfVE9PX0xPTkc6ICdSQU5HRScsCiAgVkFMVUVfQkVMT1dfTUlOSU1VTTogJ1JBTkdFJywKICBWQUxVRV9BQk9WRV9NQVhJTVVNOiAnUkFOR0UnLAogIFZBTFVFX05PVF9JTlRFR0VSOiAnUkFOR0UnLAogIEFSUkFZX1RPT19TTUFMTDogJ1JBTkdFJywKICBBUlJBWV9UT09fTEFSR0U6ICdSQU5HRScsCiAgVU5LTk9XTl9GSUVMRDogJ1VOS05PV04nLAogIEZJRUxEX0ZPUk1BVF9JTlZBTElEOiAnRk9STUFUJywKICBGSUVMRF9JTlZBTElEOiAnRkFMTF9CQUNLJywKfSk7CgovKioKICogQm91bmRlZCBzZXQgb2YgcGVyLWlzc3VlIHZhbGlkYXRpb24gY29kZXMuCiAqCiAqIFRoZXNlIGRlc2NyaWJlICp3aHkgYSBzcGVjaWZpYyBmaWVsZCBmYWlsZWQqLCBhbmQgYXJlIHJlcG9ydGVkIGluIHRoZQogKiBgZmllbGRDb2Rlc2AgZXh0ZW5zaW9uIG9mIHRoZSBwcm9ibGVtIGRvY3VtZW50LgogKgogKiBAcmVhZG9ubHkKICogQGVudW0ge3N0cmluZ30KICovCmNvbnN0IE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUyA9IE9iamVjdC5mcmVlemUoewogIC8qKiBBIHJlcXVpcmVkIGZpZWxkIHdhcyBhYnNlbnQgb3IgYHVuZGVmaW5lZGAuICovCiAgRklFTERfUkVRVUlSRUQ6ICdGSUVMRF9SRVFVSVJFRCcsCiAgLyoqIFRoZSBmaWVsZCB3YXMgcHJlc2VudCBidXQgb2YgdGhlIHdyb25nIEpTT04gdHlwZS4gKi8KICBGSUVMRF9UWVBFX0lOVkFMSUQ6ICdGSUVMRF9UWVBFX0lOVkFMSUQnLAogIC8qKiBBIHN0cmluZyB3YXMgc2hvcnRlciB0aGFuIHRoZSBhbGxvd2VkIG1pbmltdW0gKGluY2x1ZGVzIGVtcHR5IHN0cmluZ3MpLiAqLwogIEZJRUxEX1RPT19TSE9SVDogJ0ZJRUxEX1RPT19TSE9SVCcsCiAgLyoqIEEgc3RyaW5nIGV4Y2VlZGVkIGl0cyBtYXhpbXVtIGFsbG93ZWQgbGVuZ3RoLiAqLwogIEZJRUxEX1RPT19MT05HOiAnRklFTERfVE9PX0xPTkcnLAogIC8qKiBBIG51bWVyaWMgdmFsdWUgZmVsbCBiZWxvdyB0aGUgYWxsb3dlZCBtaW5pbXVtLiAqLwogIFZBTFVFX0JFTE9XX01JTklNVU06ICdWQUxVRV9CRUxPV19NSU5JTVVNJywKICAvKiogQSBudW1lcmljIHZhbHVlIGV4Y2VlZGVkIHRoZSBhbGxvd2VkIG1heGltdW0uICovCiAgVkFMVUVfQUJPVkVfTUFYSU1VTTogJ1ZBTFVFX0FCT1ZFX01BWElNVU0nLAogIC8qKiBBIG51bWVyaWMgdmFsdWUgd2FzIG5vdCBhbiBpbnRlZ2VyIHdoZXJlIG9uZSB3YXMgcmVxdWlyZWQuICovCiAgVkFMVUVfTk9UX0lOVEVHRVI6ICdWQUxVRV9OT1RfSU5URUdFUicsCiAgLyoqIEFuIGFycmF5IGhhZCBmZXdlciBpdGVtcyB0aGFuIHRoZSBhbGxvd2VkIG1pbmltdW0uICovCiAgQVJSQVlfVE9PX1NNQUxMOiAnQVJSQVlfVE9PX1NNQUxMJywKICAvKiogQW4gYXJyYXkgZXhjZWVkZWQgdGhlIGFsbG93ZWQgbWF4aW11bSBpdGVtIGNvdW50LiAqLwogIEFSUkFZX1RPT19MQVJHRTogJ0FSUkFZX1RPT19MQVJHRScsCiAgLyoqIFRoZSBwYXlsb2FkIGNvbnRhaW5lZCBhIGZpZWxkIG5vdCBkZWNsYXJlZCBpbiB0aGUgc2NoZW1hLiAqLwogIFVOS05PV05fRklFTEQ6ICdVTktOT1dOX0ZJRUxEJywKICAvKiogQSBzdHJpbmcgZGlkIG5vdCBtYXRjaCBpdHMgcmVxdWlyZWQgZm9ybWF0L3BhdHRlcm4uICovCiAgRklFTERfRk9STUFUX0lOVkFMSUQ6ICdGSUVMRF9GT1JNQVRfSU5WQUxJRCcsCiAgLyoqIEZhbGxiYWNrIGZvciBhbnkgaXNzdWUgbm90IGNvdmVyZWQgYnkgYSBtb3JlIHNwZWNpZmljIGNvZGUuICovCiAgRklFTERfSU5WQUxJRDogJ0ZJRUxEX0lOVkFMSUQnLAp9KTsKCi8qKgogKiBUb3AtbGV2ZWwgYGNvZGVgIHVzZWQgb24gdGhlIHByb2JsZW0gZG9jdW1lbnQgZm9yIGEgbWV0cmljcyB2YWxpZGF0aW9uCiAqIGZhaWx1cmUuIERpc3RpbmN0IGZyb20gdGhlIHBlci1maWVsZCBjb2RlcyBhYm92ZS4KICoKICogQHR5cGUge3N0cmluZ30KICovCmNvbnN0IE1FVFJJQ1NfVkFMSURBVElPTl9FUlJPUl9DT0RFID0gJ01FVFJJQ1NfVkFMSURBVElPTl9FUlJPUic7CgovKioKICogRmFzdCBtZW1iZXJzaGlwIHNldCBvdmVyIHtAbGluayBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVN9IHZhbHVlcywgdXNlZCB0bwogKiB2YWxpZGF0ZSBhIHNjaGVtYS1kZWNsYXJlZCBgcGFyYW1zLm1ldHJpY3NDb2RlYCBiZWZvcmUgdHJ1c3RpbmcgaXQuCiAqCiAqIEB0eXBlIHtTZXQ8c3RyaW5nPn0KICovCmNvbnN0IEtOT1dOX0NPREVTID0gbmV3IFNldChPYmplY3QudmFsdWVzKE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUykpOwoKLyoqCiAqIFByb2JsZW0gdHlwZSBVUkkgZm9yIG1ldHJpY3MgdmFsaWRhdGlvbiBmYWlsdXJlcy4KICoKICogS2VwdCBpZGVudGljYWwgdG8gdGhlIHByZS1leGlzdGluZyB2YWx1ZSBzbyB0aGUgd2lyZSBmb3JtYXQgb2YgYHR5cGVgIGRvZXMKICogbm90IGNoYW5nZSBmb3IgY3VycmVudCBjbGllbnRzLgogKgogKiBAdHlwZSB7c3RyaW5nfQogKi8KY29uc3QgTUVUUklDU19WQUxJREFUSU9OX1BST0JMRU1fVFlQRSA9CiAgJ2h0dHBzOi8vbGlxdWlmYWN0LmlvL3Byb2JsZW1zL3ZhbGlkYXRpb24tZXJyb3InOwoKLyoqCiAqIE1hcHMgYSBaZWQgaXNzdWUgdG8gYSBzdGFibGUge0BsaW5rIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFU30gbWVtYmVyLgogKgogKiBBIHNjaGVtYSByYWlzaW5nIGEgYGN1c3RvbWAgaXNzdWUgbWF5IGRlY2xhcmUgaXRzIG93biBjb2RlIHRocm91Z2gKICogYHBhcmFtcy5tZXRyaWNzQ29kZWA7IGl0IGlzIGhvbm91cmVkIG9ubHkgd2hlbiBpdCBuYW1lcyBhIGtub3duIGNvZGUsIHNvIGEKICogdHlwbyBkZWdyYWRlcyB0byB0aGUgbm9ybWFsIGNsYXNzaWZpY2F0aW9uIHJhdGhlciB0aGFuIHJlYWNoaW5nIHRoZSB3aXJlLgogKgogKiBaZWQgcmVwb3J0cyBhIG1pc3NpbmcgZmllbGQgYXMgYW4gYGludmFsaWRfdHlwZWAgaXNzdWUgd2hvc2UgYHJlY2VpdmVkYCBpcwogKiBgJ3VuZGVmaW5lZCdgLCBzbyB0aGF0IGNhc2UgaXMgZGlzYW1iaWd1YXRlZCBpbnRvIGBGSUVMRF9SRVFVSVJFRGAgYmVmb3JlIHRoZQogKiBnZW5lcmljIHR5cGUgYnJhbmNoLiBgdG9vX3NtYWxsYCAvIGB0b29fYmlnYCBhcmUgc3BsaXQgYnkgYG9yaWdpbmAgKFpvZCA0KSBvcgogKiBgdHlwZWAgKFpvZCAzKSBzbyBhIDI2LWl0ZW0gYXJyYXkgZG9lcyBub3QgcmVwb3J0IHRoZSBzYW1lIGNvZGUgYXMgYQogKiAxMjktY2hhcmFjdGVyIHN0cmluZy4KICoKICogQHBhcmFtIHtvYmplY3R9IGlzc3VlIC0gQSBzaW5nbGUgaXNzdWUgZnJvbSBhIGBa b2RFcnJvcmAuCiAqIEByZXR1cm5zIHtzdHJpbmd9IEEgbWVtYmVyIG9mIHtAbGluayBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVN9LgogKi8KZnVuY3Rpb24gY29kZUZvcklzc3VlKGlzc3VlKSB7CiAgaWYgKCFpc3N1ZSB8fCB0eXBlb2YgaXNzdWUgIT09ICdvYmplY3QnKSB7CiAgICByZXR1cm4gTUVUUklDU19WQUxJREFUSU9OX0NPREVTLkZJRUxEX0lOVkFMSUQ7CiAgfQoKICAvLyBBIHNjaGVtYSB0aGF0IHJhaXNlcyBhIGBjdXN0b21gIGlzc3VlIGNhbiBuYW1lIGl0cyBvd24gY29kZSB2aWEKICAvLyBgcGFyYW1zLm1ldHJpY3NDb2RlYCwgc28gaGFuZC1yb2xsZWQgcmVmaW5lbWVudHMgYXJlIG5vdCBmbGF0dGVuZWQgaW50byB0aGUKICAvLyBnZW5lcmljIEZJRUxEX0lOVkFMSUQgYnVja2V0LgogIGNvbnN0IGRlY2xhcmVkID0gaXNzdWUucGFyYW1zICYmIGlzc3VlLnBhcmFtcy5tZXRyaWNzQ29kZTsKICBpZiAoaXNLbm93bkNvZGUoZGVjbGFyZWQpKSB7CiAgICByZXR1cm4gZGVjbGFyZWQ7CiAgfQoKICAvLyBaZWQgNCByZW5hbWVkIGB0eXBlYCB0byBgb3JpZ2luYCBvbiBzaXplIGlzc3Vlczsgc3VwcG9ydCBib3RoLgogIGNvbnN0IG9yaWdpbiA9IGlzc3VlLm9yaWdpbiB8fCBpc3N1ZS50eXBlOwoKICBzd2l0Y2ggKGlzc3VlLmNvZGUpIHsKICAgIGNhc2UgJ2ludmFsaWRfdHlwZSc6CiAgICAgIHJldHVybiBpc3N1ZS5yZWNlaXZlZCA9PT0gJ3VuZGVmaW5lZCcgfHwgaXNzdWUuaW5wdXQgPT09IHVuZGVmaW5lZAogICAgICAgID8gTUVUUklDU19WQUxJREFUSU9OX0NPREVTLkZJRUxEX1JFUVVJUkVECiAgICAgICAgOiBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVMuRklFTERfVFlQRV9JTlZBTElEOwoKICAgIGNhc2UgJ3VucmVjb2duaXplZF9rZXlzJzoKICAgICAgcmV0dXJuIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUy5VTktOT1dOX0ZJRUxEOwoKICAgIGNhc2UgJ3Rvb19zbWFsbCc6CiAgICAgIGlmIChvcmlnaW4gPT09ICdhcnJheScgfHwgb3JpZ2luID09PSAnc2V0JykgewogICAgICAgIHJldHVybiBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVMuQVJSQVlfVE9PX1NNQUxMOwogICAgICB9CiAgICAgIGlmIChvcmlnaW4gPT09ICdudW1iZXInIHx8IG9yaWdpbiA9PT0gJ2ludCcgfHwgb3JpZ2luID09PSAnYmlnaW50JykgewogICAgICAgIHJldHVybiBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVMuVkFMVUVfQkVMT1dfTUlOSU1VTTsKICAgICAgfQogICAgICByZXR1cm4gTUVUUklDU19WQUxJREFUSU9OX0NPREVTLkZJRUxEX1RPT19TSE9SVDsKCiAgICBjYXNlICd0b29fYmlnJzoKICAgICAgaWYgKG9yaWdpbiA9PT0gJ2FycmF5JyB8fCBvcmlnaW4gPT09ICdzZXQnKSB7CiAgICAgICAgcmV0dXJuIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUy5BUlJBWV9UT09fTEFSR0U7CiAgICAgIH0KICAgICAgaWYgKG9yaWdpbiA9PT0gJ251bWJlcicgfHwgb3JpZ2luID09PSAnaW50JyB8fCBvcmlnaW4gPT09ICdiaWdpbnQnKSB7CiAgICAgICAgcmV0dXJuIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUy5WQUxVRV9BQk9WRV9NQVhJTVVNOwogICAgICB9CiAgICAgIHJldHVybiBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVMuRklFTERfVE9PX0xPTkc7CgogICAgY2FzZSAnbm90X211bHRpcGxlX29mJzoKICAgICAgcmV0dXJuIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUy5WQUxVRV9OT1RfSU5URUdFUjsKCiAgICBjYXNlICdpbnZhbGlkX2Zvcm1hdCc6CiAgICBjYXNlICdpbnZhbGlkX3N0cmluZyc6CiAgICAgIHJldHVybiBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVMuRklFTERfRk9STUFUX0lOVkFMSUQ7CgogICAgZGVmYXVsdDoKICAgICAgcmV0dXJuIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUy5GSUVMRF9JTlZBTElEOwogIH0KfQoKLyoqCiAqIFJldHVybnMgdGhlIGNhdGVnb3J5IGZvciBhIHZhbGlkYXRpb24gY29kZSwgb3IgYEZBTExCQUNLYCBmb3IgdW5rbm93bgogKiBjb2Rlcy4gVXNlZCBieSBvYnNlcnZhYmlsaXR5IGFuZCBjbGllbnQgcm91dGluZyBzbyBhIG5ldyBjb2RlIGNhbiBuZXZlcgogKiBzaWxlbnRseSBtaXNzIGl0cyBjYXRlZ29yeS4KICoKICogQHBhcmFtIHtzdHJpbmd9IGNvZGUKICogQHJldHVybnMge01ldHJpY3NDb2RlQ2F0ZWdvcnl9CiAqLwpmdW5jdGlvbiBjYXRlZ29yeUZvckNvZGUoY29kZSkgewogIHJldHVybiBNRVRSSUNTX0NPREVfQ0FURUdPUklFU1tjb2RlXSB8fCAnRkFMTEJBQ0snOwp9CgovKioKICogQXNzZXJ0cyB0aGUgaW52YXJpYW50IHRoYXQgZXZlcnkgbWVtYmVyIG9mIHtAbGluayBNRVRSSUNTX1ZBTElEQVRJT05fQ09ERVN9CiAqIGhhcyBhIGNhdGVnb3J5IGFuZCB0aGF0IG5vIGV4dHJhIGNhdGVnb3JpZXMgZXhpc3QuIFRoaXMgaXMgY2FsbGVkIGF0CiAqIG1vZHVsZSBsb2FkIHRpbWUgc28gYSBtaXNtYXRjaCBmYWlscyBmYXN0IGluIHRlc3RzIGFuZCBhdCBib290IHJhdGhlcgogKiB0aGFuIHNpbGVudGx5IHByb2R1Y2luZyBhbiB1bmNhdGVnb3JpemVkIGNvZGUgb24gdGhlIHdpcmUuCiAqCiAqIEB0aHJvd3Mge0Vycm9yfSBXaGVuIHRoZSBjb2RlL2NhdGVnb3J5IG1hcHMgZGl2ZXJnZS4KICovCmZ1bmN0aW9uIGFzc2VydENvZGVDYXRlZ29yeUludmFyaWFudCgpIHsKICBjb25zdCBjb2RlcyA9IE9iamVjdC52YWx1ZXMoTUVUUklDU19WQUxJREFUSU9OX0NPREVTKTsKICBjb25zdCBjYXRlZ29yaWVzID0gT2JqZWN0LmtleXMoTUVUUklDU19DT0RFX0NBVEVHT1JJRVMpOwoKICBjb25zdCBtaXNzaW5nID0gY29kZXMuZmlsdGVyKChjb2RlKSA9PiAhT2JqZWN0LnByb3RvdHlwZS5oYXNPd25Qcm9wZXJ0eS5jYWxsKE1FVFJJQ1NfQ09ERV9DQVRFR09SSUVTLCBjb2RlKSk7CiAgaWYgKG1pc3NpbmcubGVuZ3RoID4gMCkgewogICAgdGhyb3cgbmV3IEVycm9yKAogICAgICBgbWV0cmljc1ZhbGlkYXRpb25Db2RlczogbWlzc2luZyBjYXRlZ29yeSBmb3IgJHttaXNzaW5nLmpvaW4oJywgJyl9YCwKICAgICk7CiAgfQoKICBjb25zdCBleHRyYSA9IGNhdGVnb3JpZXMuZmlsdGVyKChjb2RlKSA9PiAhaXNLbm93bkNvZGUoY29kZSkpOwogIGlmIChleHRyYS5sZW5ndGggPiAwKSB7CiAgICB0aHJvdyBuZXcgRXJyb3IoCiAgICAgIGBtZXRyaWNzVmFsaWRhdGlvbkNvZGVzOiB1bmtub3duIGNhdGVnb3J5IGtleShzKSAke2V4dHJhLmpvaW4oJywgJyl9YCwKICAgICk7CiAgfQp9Cgphc3NlcnRDb2RlQ2F0ZWdvcnlJbnZhcmlhbnQoKTsKCm1vZHVsZS5leHBvcnRzID0gewogIE1FVFJJQ1NfVkFMSURBVElPTl9DT0RFUywKICBNRVRSSUNTX1ZBTElEQVRJT05fRVJST1JfQ09ERSwKICBNRVRSSUNTX1ZBTElEQVRJT05fUFJPQkxFTV9UWVBFLAogIE1FVFJJQ1NfQ09ERV9DQVRFR09SSUVTLAogIGNvZGVGb3JJc3N1ZSwKICBpc0tub3duQ29kZSwKICBjYXRlZ29yeUZvckNvZGUsCiAgYXNzZXJ0Q29kZUNhdGVnb3J5SW52YXJpYW50LAp9Owo=
+ * @fileoverview Validation and error code constants for the LiquiFact backend.
+ *
+ * ## Purpose
+ *
+ * This module is the **single source of truth** for all machine-readable error
+ * codes emitted by the application.  Every domain (invoice state machine,
+ * configuration, storage, escrow, SME, webhooks, metrics auth) defines its
+ * codes here so that:
+ *
+ * ## Compatibility contract
+ * This module guarantees:
+ * - All exported symbols are present and have the expected types at runtime
+ * - The codes object is frozen and cannot be mutated
+ * - Each code value equals its key (self-describing on the wire)
+ * - The top-level error code and problem type URI are stable
+ * - Adding new codes is backward-compatible (existing callers unaffected)
+ * - Removing or renaming codes is a breaking change (requires major version bump)
+ *
+ * @module constants/metricsValidationCodes
+ */
+
+// ---------------------------------------------------------------------------
+// Invoice State Machine codes
+//
+// Invariants:
+//   - INVALID_TRANSITION is returned when fromState→toState is not in
+//     VALID_TRANSITIONS and neither state is terminal.
+//   - TERMINAL_STATE is returned when fromState is in TERMINAL_STATES.
+//   - ALREADY_IN_TARGET_STATE is returned when fromState === toState.
+//   - MISSING_* codes are returned for absent required fields.
+//   - MISSING_TRANSITION_REASON / TRANSITION_REASON_TOO_LONG guard terminal
+//     transitions (REJECTED, CANCELLED) that mandate a reason string.
+// ---------------------------------------------------------------------------
+
+/**
+ * Version of the validation code taxonomy.
+ * Increment when adding new codes. Increment major when removing/renaming codes.
+ *
+ * @type {string}
+ */
+const METRICS_VALIDATION_CODES_VERSION = '1.0.0';
+
+/**
+ * Bounded set of per-issue validation codes.
+ *
+ * @param {string} MetricsValidationCode
+ * @readonly
+ * @enum {string}
+ * @property {string} INVALID_TRANSITION        - fromState→toState pair not in VALID_TRANSITIONS.
+ * @property {string} TERMINAL_STATE            - Cannot transition from a terminal state.
+ * @property {string} ALREADY_IN_TARGET_STATE   - Invoice is already in the requested state.
+ * @property {string} INVALID_CURRENT_STATE     - currentState value is not a recognised invoice state.
+ * @property {string} INVALID_TARGET_STATE      - targetState value is not a recognised invoice state.
+ * @property {string} MISSING_INVOICE_ID        - invoiceId field absent or empty.
+ * @property {string} MISSING_CURRENT_STATE     - currentState field absent or empty.
+ * @property {string} MISSING_TARGET_STATE      - targetState field absent or empty.
+ * @property {string} MISSING_ACTOR             - actor field absent or empty.
+ * @property {string} MISSING_TRANSITION_REASON - reason required for REJECTED/CANCELLED but not supplied.
+ * @property {string} TRANSITION_REASON_TOO_LONG- reason exceeds MAX_TRANSITION_REASON_LENGTH (1024).
+ */
+const INVOICE_SM_CODES = Object.freeze({
+  INVALID_TRANSITION: 'INVALID_TRANSITION',
+  TERMINAL_STATE: 'TERMINAL_STATE',
+  ALREADY_IN_TARGET_STATE: 'ALREADY_IN_TARGET_STATE',
+  INVALID_CURRENT_STATE: 'INVALID_CURRENT_STATE',
+  INVALID_TARGET_STATE: 'INVALID_TARGET_STATE',
+  MISSING_INVOICE_ID: 'MISSING_INVOICE_ID',
+  MISSING_CURRENT_STATE: 'MISSING_CURRENT_STATE',
+  MISSING_TARGET_STATE: 'MISSING_TARGET_STATE',
+  MISSING_ACTOR: 'MISSING_ACTOR',
+  MISSING_TRANSITION_REASON: 'MISSING_TRANSITION_REASON',
+  TRANSITION_REASON_TOO_LONG: 'TRANSITION_REASON_TOO_LONG',
+});
+
+// ---------------------------------------------------------------------------
+// Configuration / DTO codes
+//
+// Invariants:
+//   - CONFIG_MISSING_FIELD is emitted when a required env var is absent.
+//   - CONFIG_VALIDATION_ERROR is emitted when a value is present but violates
+//     a type or constraint rule (e.g. JWT_SECRET too short, PORT out of range).
+//   - CONFIG_PARSE_ERROR is emitted when a JSON env var fails JSON.parse.
+//   - CONFIG_UNEXPECTED_ERROR is emitted for any non-Zod thrown value during
+//     config parsing (programming bugs, non-Error throws, etc.).
+//   - All config errors set recoverable=false — a broken config must be fixed
+//     before the process is allowed to serve traffic.
+// ---------------------------------------------------------------------------
+
+/**
+ * Validation codes owned by the configuration / ConfigDto layer.
+ *
+ * @readonly
+ * @enum {string}
+ * @property {string} CONFIG_MISSING_FIELD    - Required env var absent from input.
+ * @property {string} CONFIG_VALIDATION_ERROR - Value present but violates constraint.
+ * @property {string} CONFIG_PARSE_ERROR      - JSON env var failed to parse.
+ * @property {string} CONFIG_UNEXPECTED_ERROR - Unexpected non-Zod error during parse.
+ */
+const CONFIG_CODES = Object.freeze({
+  CONFIG_MISSING_FIELD: 'CONFIG_MISSING_FIELD',
+  CONFIG_VALIDATION_ERROR: 'CONFIG_VALIDATION_ERROR',
+  CONFIG_PARSE_ERROR: 'CONFIG_PARSE_ERROR',
+  CONFIG_UNEXPECTED_ERROR: 'CONFIG_UNEXPECTED_ERROR',
+});
+
+// ---------------------------------------------------------------------------
+// Storage / upload codes
+//
+// Invariants:
+//   - INVALID_FILENAME is set when a filename contains path traversal sequences
+//     (../), null bytes, or other disallowed characters.
+//   - INVALID_MIME_TYPE is set when the uploaded file is not on the MIME allowlist.
+//   - FILE_TOO_LARGE is set when the payload exceeds BODY_LIMIT_INVOICE.
+//   - INVALID_TENANT_ID / INVALID_INVOICE_ID are set when the route parameters
+//     contain characters outside [a-zA-Z0-9_-].
+//   - PRESIGNED_URL_EXPIRY_OUT_OF_RANGE is set when the requested expiry window
+//     exceeds the allowed bounds (upload: 15 min, download: 1 h–24 h).
+// ---------------------------------------------------------------------------
+
+/**
+ * Validation codes owned by the storage / object-upload layer.
+ *
+ * @readonly
+ * @enum {string}
+ * @property {string} INVALID_FILENAME                  - Filename fails allowlist/sanitization.
+ * @property {string} INVALID_MIME_TYPE                 - File MIME type not on allowed list.
+ * @property {string} FILE_TOO_LARGE                    - Payload exceeds configured body limit.
+ * @property {string} INVALID_TENANT_ID                 - Tenant ID contains disallowed characters.
+ * @property {string} INVALID_INVOICE_ID                - Invoice ID contains disallowed characters.
+ * @property {string} PRESIGNED_URL_EXPIRY_OUT_OF_RANGE - Requested URL expiry outside allowed window.
+ */
+const STORAGE_CODES = Object.freeze({
+  INVALID_FILENAME: 'INVALID_FILENAME',
+  INVALID_MIME_TYPE: 'INVALID_MIME_TYPE',
+  FILE_TOO_LARGE: 'FILE_TOO_LARGE',
+  INVALID_TENANT_ID: 'INVALID_TENANT_ID',
+  INVALID_INVOICE_ID: 'INVALID_INVOICE_ID',
+  PRESIGNED_URL_EXPIRY_OUT_OF_RANGE: 'PRESIGNED_URL_EXPIRY_OUT_OF_RANGE',
+});
+
+// ---------------------------------------------------------------------------
+// Escrow / on-chain codes
+//
+// Invariants:
+//   - INVALID_CONTRACT_ID is set when a contract address fails Stellar
+//     base-32 format validation.
+//   - RPC_ERROR is set when the Soroban RPC endpoint returns an error or
+//     is unreachable.
+//   - ESCROW_NOT_FOUND is set when no escrow record exists for an invoice.
+//   - ESCROW_ALREADY_LINKED is set when an attempt is made to link an invoice
+//     that already has an active escrow.
+//   - INVALID_ASSET is set when a Stellar asset code is malformed.
+//   - RECONCILIATION_MISMATCH is set when DB funded total ≠ on-chain amount.
+// ---------------------------------------------------------------------------
+
+/**
+ * Validation codes owned by the escrow / on-chain layer.
+ *
+ * @readonly
+ * @enum {string}
+ * @property {string} INVALID_CONTRACT_ID       - Contract address fails Stellar base-32 validation.
+ * @property {string} RPC_ERROR                 - Soroban RPC endpoint error or unreachable.
+ * @property {string} ESCROW_NOT_FOUND          - No escrow found for the given invoice.
+ * @property {string} ESCROW_ALREADY_LINKED     - Invoice already has an active escrow.
+ * @property {string} INVALID_ASSET             - Stellar asset code is malformed.
+ * @property {string} RECONCILIATION_MISMATCH   - DB funded total differs from on-chain amount.
+ */
+const ESCROW_CODES = Object.freeze({
+  INVALID_CONTRACT_ID: 'INVALID_CONTRACT_ID',
+  RPC_ERROR: 'RPC_ERROR',
+  ESCROW_NOT_FOUND: 'ESCROW_NOT_FOUND',
+  ESCROW_ALREADY_LINKED: 'ESCROW_ALREADY_LINKED',
+  INVALID_ASSET: 'INVALID_ASSET',
+  RECONCILIATION_MISMATCH: 'RECONCILIATION_MISMATCH',
+});
+
+// ---------------------------------------------------------------------------
+// SME (Small/Medium Enterprise) codes
+//
+// Invariants:
+//   - SME_NOT_FOUND is set when no SME record exists for the requested ID.
+//   - SME_KYC_REQUIRED is set when a protected action is attempted before KYC.
+//   - SME_KYC_REJECTED is set when KYC verification was explicitly rejected.
+//   - SME_METRICS_UNAVAILABLE is set when the metrics aggregation query fails
+//     for a non-auth reason (e.g. DB timeout).
+// ---------------------------------------------------------------------------
+
+/**
+ * Validation codes owned by the SME layer.
+ *
+ * @readonly
+ * @enum {string}
+ * @property {string} SME_NOT_FOUND            - No SME record found for the given ID.
+ * @property {string} SME_KYC_REQUIRED         - Protected action requires KYC verification.
+ * @property {string} SME_KYC_REJECTED         - SME KYC verification was rejected.
+ * @property {string} SME_METRICS_UNAVAILABLE  - Metrics query failed (non-auth reason).
+ */
+const SME_CODES = Object.freeze({
+  SME_NOT_FOUND: 'SME_NOT_FOUND',
+  SME_KYC_REQUIRED: 'SME_KYC_REQUIRED',
+  SME_KYC_REJECTED: 'SME_KYC_REJECTED',
+  SME_METRICS_UNAVAILABLE: 'SME_METRICS_UNAVAILABLE',
+});
+
+// ---------------------------------------------------------------------------
+// Webhook codes
+//
+// Invariants:
+//   - WEBHOOK_DELIVERY_FAILED is set after all retry attempts are exhausted.
+//   - WEBHOOK_SIGNATURE_INVALID is set when the HMAC-SHA256 signature on an
+//     inbound webhook does not match the computed value.
+//   - WEBHOOK_TIMESTAMP_STALE is set when |now − t| > 5 minutes (replay guard).
+//   - WEBHOOK_PAYLOAD_INVALID is set when the webhook body cannot be parsed or
+//     fails structural validation.
+//   - WEBHOOK_TENANT_NOT_FOUND is set when the tenant has no webhook_url configured.
+// ---------------------------------------------------------------------------
+
+/**
+ * Validation codes owned by the webhook delivery layer.
+ *
+ * @readonly
+ * @enum {string}
+ * @property {string} WEBHOOK_DELIVERY_FAILED    - All retry attempts exhausted; delivery dead-lettered.
+ * @property {string} WEBHOOK_SIGNATURE_INVALID  - Inbound HMAC-SHA256 signature mismatch.
+ * @property {string} WEBHOOK_TIMESTAMP_STALE    - Timestamp outside 5-minute replay tolerance window.
+ * @property {string} WEBHOOK_PAYLOAD_INVALID    - Payload cannot be parsed or fails validation.
+ * @property {string} WEBHOOK_TENANT_NOT_FOUND   - Tenant has no webhook_url configured.
+ */
+const WEBHOOK_CODES = Object.freeze({
+  WEBHOOK_DELIVERY_FAILED: 'WEBHOOK_DELIVERY_FAILED',
+  WEBHOOK_SIGNATURE_INVALID: 'WEBHOOK_SIGNATURE_INVALID',
+  WEBHOOK_TIMESTAMP_STALE: 'WEBHOOK_TIMESTAMP_STALE',
+  WEBHOOK_PAYLOAD_INVALID: 'WEBHOOK_PAYLOAD_INVALID',
+  WEBHOOK_TENANT_NOT_FOUND: 'WEBHOOK_TENANT_NOT_FOUND',
+});
+
+// ---------------------------------------------------------------------------
+// Metrics auth codes
+//
+// Invariants:
+//   - METRICS_AUTH_REQUIRED is set when a request reaches /metrics without a
+//     valid bearer token and the origin is not a loopback address.
+//   - METRICS_INVALID_TOKEN is set when the bearer token is present but does
+//     not match METRICS_BEARER_TOKEN (constant-time comparison).
+//   - METRICS_NON_LOOPBACK_DENIED is set when no token is configured and the
+//     request originates from a non-loopback address.
+// ---------------------------------------------------------------------------
+
+/**
+ * Validation codes owned by the metrics authentication layer.
+ *
+ * @readonly
+ * @enum {string}
+ * @property {string} METRICS_AUTH_REQUIRED       - Request lacks authorization entirely.
+ * @property {string} METRICS_INVALID_TOKEN       - Bearer token present but does not match.
+ * @property {string} METRICS_NON_LOOPBACK_DENIED - No token configured; non-loopback origin rejected.
+ */
+const METRICS_AUTH_CODES = Object.freeze({
+  METRICS_AUTH_REQUIRED: 'METRICS_AUTH_REQUIRED',
+  METRICS_INVALID_TOKEN: 'METRICS_INVALID_TOKEN',
+  METRICS_NON_LOOPBACK_DENIED: 'METRICS_NON_LOOPBACK_DENIED',
+});
+
+// ---------------------------------------------------------------------------
+// Flat registry
+//
+// VALIDATION_CODES is a convenience flat map that merges every domain group.
+// It is frozen after construction.  Callers who only care about one domain
+// should prefer the named group export for clarity.
+//
+// Invariant: no two codes in the registry may share the same string value.
+// This is enforced by the test suite (uniqueness check).
+// ---------------------------------------------------------------------------
+
+/**
+ * Flat registry that merges all domain groups into one map.
+ *
+ * Useful for generic error-code comparisons (e.g. in middleware that handles
+ * errors from multiple subsystems without knowing the specific domain).
+ *
+ * @readonly
+ * @type {Readonly<Record<string, string>>}
+ */
+const VALIDATION_CODES = Object.freeze({
+  ...INVOICE_SM_CODES,
+  ...CONFIG_CODES,
+  ...STORAGE_CODES,
+  ...ESCROW_CODES,
+  ...SME_CODES,
+  ...WEBHOOK_CODES,
+  ...METRICS_AUTH_CODES,
+});
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+/**
+ * Classifies a whole `ZodError` into a deterministic, deduplicated list of
+ * codes.
+ *
+ * This is the recovery primitive for the caller: given a failed validation,
+ * it produces a stable set of codes that can be logged, metered, and returned
+ * to the client without exposing the original messages (which may echo
+ * untrusted input).
+ *
+ * Guarantees:
+  - Never throws, even for `null`/`undefined`/malformed input.
+  - Order is deterministic: first-seen order, duplicates removed.
+  - Always returns at least one code so callers never have to handle an
+    empty classification.
+ *
+ * @param {unknown} error - A `ZodError` or anything else.
+ * @returns {string[]} Deduplicated members of {@link METRICS_VALIDATION_CODES}.
+ */
+function codesForError(error) {
+  const issues =
+    error && typeof error === 'object' && Array.isArray(error.issues)
+      ? error.issues
+      : [];
+
+  const seen = new Set();
+  const out = [];
+  for (const issue of issues) {
+    const code = codeForIssue(issue);
+    if (!seen.has(code)) {
+      seen.add(code);
+      out.push(code);
+    }
+  }
+
+  if (out.length === 0) {
+    out.push(METRICS_VALIDATION_CODES.FIELD_INVALID);
+  }
+
+  return out;
+}
+
+/**
+ * Validates that the module exports satisfy the compatibility contract.
+ *
+ * This function runs at module load time to ensure:
+ * - All expected exports are present
+ * - Exports have the correct types
+ * - The codes object is frozen
+ * - Code values are stable (key equals value)
+ *
+ * @throws {Error} If any compatibility contract is violated.
+ * @returns {void}
+ */
+function validateCompatibilityContract() {
+  // Validate METRICS_VALIDATION_CODES is frozen
+  if (!Object.isFrozen(METRICS_VALIDATION_CODES)) {
+    throw new Error(
+      '[metricsValidationCodes] METRICS_VALIDATION_CODES must be frozen to prevent runtime mutations.'
+    );
+  }
+
+  // Validate each code value equals its key (self-describing)
+  for (const [key, value] of Object.entries(METRICS_VALIDATION_CODES)) {
+    if (value !== key) {
+      throw new Error(
+        `[metricsValidationCodes] Code value must equal its key for wire stability. Got key="${key}", value="${value}"`
+      );
+    }
+  }
+
+  // Validate KNOWN_CODES Set contains all code values
+  for (const value of Object.values(METRICS_VALIDATION_CODES)) {
+    if (!KNOWN_CODES.has(value)) {
+      throw new Error(
+        `[metricsValidationCodes] KNOWN_CODES Set is missing code value "${value}"`
+      );
+    }
+  }
+
+  // Validate top-level constants are strings
+  if (typeof METRICS_VALIDATION_ERROR_CODE !== 'string') {
+    throw new Error(
+      '[metricsValidationCodes] METRICS_VALIDATION_ERROR_CODE must be a string.'
+    );
+  }
+
+  if (typeof METRICS_VALIDATION_PROBLEM_TYPE !== 'string') {
+    throw new Error(
+      '[metricsValidationCodes] METRICS_VALIDATION_PROBLEM_TYPE must be a string.'
+    );
+  }
+
+  // Validate problem type URI is a valid URI format
+  if (!METRICS_VALIDATION_PROBLEM_TYPE.startsWith('https://')) {
+    throw new Error(
+      '[metricsValidationCodes] METRICS_VALIDATION_PROBLEM_TYPE must be an HTTPS URI.'
+    );
+  }
+
+  // Validate codeForIssue is a function
+  if (typeof codeForIssue !== 'function') {
+    throw new Error(
+      '[metricsValidationCodes] codeForIssue must be a function.'
+    );
+  }
+
+  // Validate codeForIssue returns known codes for all known issue codes
+  const testCases = [
+    { code: 'invalid_type', received: 'undefined' },
+    { code: 'invalid_type', received: 'number' },
+    { code: 'unrecognized_keys', keys: [] },
+    { code: 'too_small', origin: 'string' },
+    { code: 'too_big', origin: 'string' },
+    { code: 'too_small', origin: 'array' },
+    { code: 'too_big', origin: 'array' },
+    { code: 'too_small', origin: 'number' },
+    { code: 'too_big', origin: 'number' },
+    { code: 'not_multiple_of' },
+    { code: 'invalid_format' },
+  ];
+
+  for (const testCase of testCases) {
+    const result = codeForIssue(testCase);
+    if (!KNOWN_CODES.has(result)) {
+      throw new Error(
+        `[metricsValidationCodes] codeForIssue returned unknown code "${result}" for issue ${JSON.stringify(testCase)}`
+      );
+    }
+  }
+}
+
+// Run compatibility validation at module load time
+validateCompatibilityContract();
+
+module.exports = {
+  METRICS_VALIDATION_CODES,
+  METRICS_VALIDATION_ERROR_CODE,
+  METRICS_VALIDATION_PROBLEM_TYPE,
+  codeForIssue,
+  METRICS_VALIDATION_CODES_VERSION,
+};

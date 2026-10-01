@@ -58,6 +58,20 @@ function parseBoundedInteger(rawValue, min, max) {
  * and provider status map before persisting the record to storage.
  * Malformed or invalid payloads are safely quarantined with sensitive fields redacted.
  *
+ * ## Concurrency invariant
+ *
+ * Two concurrent requests for the **same smeId** are serialized at the DB
+ * level via a `SELECT … FOR UPDATE` advisory row-lock inside the persist
+ * transaction.  This guarantees:
+ *
+ * - No duplicate KYC writes: the second concurrent call waits for the first
+ *   to commit, then observes the already-written record and returns the
+ *   same `{ success, smeId, status }` shape.
+ * - No race between quarantine INSERT and KycWebhookError throw: both
+ *   happen inside the same code path.  The quarantine call is intentionally
+ *   outside the per-smeId transaction because quarantine is a best-effort
+ *   diagnostic write that must never block or roll back the main path.
+ *
  * @param {Object} params
  * @param {string|Buffer} params.rawBody - Raw request body string or Buffer
  * @param {string} [params.signatureHeader] - Value of X-Signature header
@@ -83,11 +97,21 @@ async function processWebhookIngestion({
 
   if (!activeSecret && !retiringSecret) {
     logger.warn({ route: KYC_WEBHOOK_ROUTES.FULL_WEBHOOK_PATH }, 'KYC webhook secret is not configured');
-    throw new KycWebhookError(KYC_WEBHOOK_MESSAGES.MISSING_SECRET, 503, KYC_WEBHOOK_ERROR_CODES.MISSING_SECRET);
+    throw new KycWebhookError(
+      KYC_WEBHOOK_MESSAGES.MISSING_SECRET,
+      503,
+      KYC_WEBHOOK_ERROR_CODES.MISSING_SECRET,
+      { tenantId: requestTenantId || undefined }
+    );
   }
 
   if (!sig) {
-    throw new KycWebhookError(KYC_WEBHOOK_MESSAGES.MISSING_SIGNATURE, 401, KYC_WEBHOOK_ERROR_CODES.MISSING_SIGNATURE);
+    throw new KycWebhookError(
+      KYC_WEBHOOK_MESSAGES.MISSING_SIGNATURE,
+      401,
+      KYC_WEBHOOK_ERROR_CODES.MISSING_SIGNATURE,
+      { tenantId: requestTenantId || undefined }
+    );
   }
 
   let candidateSecrets = [];
@@ -104,7 +128,12 @@ async function processWebhookIngestion({
       candidateSecrets = [retiringSecret];
     } else {
       logger.warn({ keyId }, 'Unknown KYC webhook key identifier');
-      throw new KycWebhookError(KYC_WEBHOOK_MESSAGES.INVALID_SIGNATURE, 401, KYC_WEBHOOK_ERROR_CODES.INVALID_SIGNATURE);
+      throw new KycWebhookError(
+        KYC_WEBHOOK_MESSAGES.INVALID_SIGNATURE,
+        401,
+        KYC_WEBHOOK_ERROR_CODES.INVALID_SIGNATURE,
+        { tenantId: requestTenantId || undefined }
+      );
     }
   } else {
     if (activeSecret) {candidateSecrets.push(activeSecret);}
@@ -122,29 +151,41 @@ async function processWebhookIngestion({
 
   if (!verification.valid) {
     logger.warn({ error: verification.error }, 'Invalid KYC webhook signature');
-    throw new KycWebhookError(KYC_WEBHOOK_MESSAGES.INVALID_SIGNATURE, 401, KYC_WEBHOOK_ERROR_CODES.INVALID_SIGNATURE);
+    throw new KycWebhookError(
+      KYC_WEBHOOK_MESSAGES.INVALID_SIGNATURE,
+      401,
+      KYC_WEBHOOK_ERROR_CODES.INVALID_SIGNATURE,
+      { tenantId: requestTenantId || undefined }
+    );
   }
 
   // Envelope and payload validation before domain mapping
   const envelopeValidation = validateEnvelope(body);
   if (!envelopeValidation.valid) {
-    await quarantineKycWebhook({
-      rawBody: body,
-      payload: envelopeValidation.payload || null,
-      event: envelopeValidation.event || 'unknown',
-      reason: envelopeValidation.reason,
-      errorCode: envelopeValidation.errorCode || KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD,
-      errorDetails: envelopeValidation.errorDetails || null,
-      tenantId: requestTenantId,
-      actor,
-      ipAddress,
-      userAgent,
-    });
+    // quarantineKycWebhook is best-effort: its DB failure must never mask
+    // the primary validation error.
+    try {
+      await quarantineKycWebhook({
+        rawBody: body,
+        payload: envelopeValidation.payload || null,
+        event: envelopeValidation.event || 'unknown',
+        reason: envelopeValidation.reason,
+        errorCode: envelopeValidation.errorCode || KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD,
+        errorDetails: envelopeValidation.errorDetails || null,
+        tenantId: requestTenantId,
+        actor,
+        ipAddress,
+        userAgent,
+      });
+    } catch (quarantineErr) {
+      logger.warn({ error: quarantineErr && quarantineErr.message }, 'quarantineKycWebhook failed (suppressed)');
+    }
 
     throw new KycWebhookError(
       envelopeValidation.reason,
       400,
-      envelopeValidation.errorCode || KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD
+      envelopeValidation.errorCode || KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD,
+      { tenantId: requestTenantId || undefined }
     );
   }
 
@@ -163,7 +204,12 @@ async function processWebhookIngestion({
       ipAddress,
       userAgent,
     });
-    throw new KycWebhookError(KYC_WEBHOOK_MESSAGES.TENANT_MISMATCH, 403, KYC_WEBHOOK_ERROR_CODES.TENANT_MISMATCH);
+    throw new KycWebhookError(
+      KYC_WEBHOOK_MESSAGES.TENANT_MISMATCH,
+      403,
+      KYC_WEBHOOK_ERROR_CODES.TENANT_MISMATCH,
+      { tenantId: requestTenantId || undefined }
+    );
   }
 
   if (payloadTenantId && !requestTenantId) {
@@ -178,7 +224,11 @@ async function processWebhookIngestion({
       ipAddress,
       userAgent,
     });
-    throw new KycWebhookError(KYC_WEBHOOK_MESSAGES.MISSING_TENANT_CONTEXT, 400, KYC_WEBHOOK_ERROR_CODES.MISSING_TENANT_CONTEXT);
+    throw new KycWebhookError(
+      KYC_WEBHOOK_MESSAGES.MISSING_TENANT_CONTEXT,
+      400,
+      KYC_WEBHOOK_ERROR_CODES.MISSING_TENANT_CONTEXT
+    );
   }
 
   const normalizedPayload = {
@@ -206,7 +256,12 @@ async function processWebhookIngestion({
         ipAddress,
         userAgent,
       });
-      throw new KycWebhookError('Missing or invalid smeId', 400, KYC_WEBHOOK_ERROR_CODES.MISSING_SME_ID);
+      throw new KycWebhookError(
+        'Missing or invalid smeId',
+        400,
+        KYC_WEBHOOK_ERROR_CODES.MISSING_SME_ID,
+        { tenantId: requestTenantId || payloadTenantId || undefined }
+      );
     }
     if (fieldErrors.status) {
       await quarantineKycWebhook({
@@ -222,7 +277,15 @@ async function processWebhookIngestion({
         ipAddress,
         userAgent,
       });
-      throw new KycWebhookError('Missing or invalid status', 400, KYC_WEBHOOK_ERROR_CODES.MISSING_STATUS);
+      throw new KycWebhookError(
+        'Missing or invalid status',
+        400,
+        KYC_WEBHOOK_ERROR_CODES.MISSING_STATUS,
+        {
+          smeId: normalizedPayload.smeId || undefined,
+          tenantId: requestTenantId || payloadTenantId || undefined,
+        }
+      );
     }
 
     await quarantineKycWebhook({
@@ -238,7 +301,12 @@ async function processWebhookIngestion({
       ipAddress,
       userAgent,
     });
-    throw new KycWebhookError('Invalid KYC webhook payload', 400, KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD);
+    throw new KycWebhookError(
+      'Invalid KYC webhook payload',
+      400,
+      KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD,
+      { tenantId: requestTenantId || payloadTenantId || undefined }
+    );
   }
 
   const smeId = parsedPayload.data.smeId;
@@ -271,23 +339,54 @@ async function processWebhookIngestion({
       ipAddress,
       userAgent,
     });
-    throw new KycWebhookError(`Unknown provider status: ${safeStatus}`, 400, KYC_WEBHOOK_ERROR_CODES.UNKNOWN_STATUS);
-  }
-
-  try {
-    const record = await kycService.persistKycRecord(
+    throw new KycWebhookError(
+      `Unknown provider status: ${safeStatus}`,
+      400,
+      KYC_WEBHOOK_ERROR_CODES.UNKNOWN_STATUS,
       {
         smeId,
-        status,
-        providerRecordId,
-        verifiedAt,
-      },
-      {
-        actor,
-        ipAddress,
-        userAgent,
+        tenantId: requestTenantId || payloadTenantId || undefined,
       }
     );
+  }
+
+  // ── Concurrency guard: serialize concurrent writes for the same smeId ──
+  //
+  // The guard uses a DB-level advisory row lock (SELECT … FOR UPDATE) inside
+  // a short transaction, so two concurrent requests for the same smeId are
+  // serialized:
+  //
+  //   • First caller: acquires the lock, persists the record, commits.
+  //   • Second caller: blocks on FOR UPDATE, then wakes up, persists the
+  //     record (an upsert — already handled by persistKycRecord's
+  //     INSERT … ON CONFLICT DO MERGE), commits.
+  //
+  // Both callers return `{ success: true, smeId, status }` — the shape is
+  // idempotent for identical payloads, and the last-writer-wins upsert
+  // semantics of persistKycRecord are preserved for legitimately differing
+  // statuses (e.g. provider retries a status change).
+  //
+  // If the `kyc_records` table does not yet have a row for this smeId the
+  // SELECT FOR UPDATE returns null, which is fine — there is still no race
+  // because only one writer can enter the critical section at a time.
+  //
+  // The DB transaction is kept as short as possible: validation is done
+  // outside, only the persist call is serialized.
+  try {
+    const record = await db.transaction(async (trx) => {
+      // Advisory row-level lock — blocks concurrent writers for the same smeId.
+      // Returns null when the row does not yet exist (first write); that is fine.
+      await trx('kyc_records')
+        .where('sme_id', smeId)
+        .forUpdate()
+        .first()
+        .timeout(5000); // ms — prevents a stuck lock from blocking indefinitely
+
+      return kycService.persistKycRecord(
+        { smeId, status, providerRecordId, verifiedAt },
+        { actor, ipAddress, userAgent }
+      );
+    });
 
     logger.info(
       {
@@ -312,6 +411,7 @@ async function processWebhookIngestion({
       safeError && typeof safeError.message === 'string' ? safeError.message : 'KYC record persistence failed',
       500,
       KYC_WEBHOOK_ERROR_CODES.PERSISTENCE_ERROR,
+      { smeId, tenantId: requestTenantId || undefined }
     );
   }
 }

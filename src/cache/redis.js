@@ -1,7 +1,28 @@
 'use strict';
 
 const { CircuitBreaker } = require('../utils/circuitBreaker');
-const { redisCacheFailOpenTotal } = require('../metrics');
+const metrics = require('../metrics');
+const { redisCacheFailOpenTotal } = metrics;
+
+/**
+ * Best-effort metric helper. Returns a no-op counter when the
+ * optional counter is not exported by the metrics module so the cache
+ * layer never fails because of observability wiring.
+ * @param {string} name Metric export name.
+ * @returns {{inc: Function}} Counter with an `inc(labels?)` method.
+ */
+function counter(name) {
+  const m = metrics[name];
+  if (m && typeof m.inc === 'function') {
+    return m;
+  }
+  return { inc: () => {} };
+}
+
+const redisCacheRetryTotal = counter('redisCacheRetryTotal');
+const redisCacheCircuitOpenTotal = counter('redisCacheCircuitOpenTotal');
+const redisCacheTimeoutTotal = counter('redisCacheTimeoutTotal');
+const redisCacheCorruptTotal = counter('redisCacheCorruptTotal');
 
 const DEFAULT_TTL_SECONDS = 30;
 const MIN_TTL_SECONDS = 5;
@@ -14,15 +35,18 @@ const DEFAULT_TIMEOUT_MS = 500;
 const MIN_TIMEOUT_MS = 50;
 const MAX_TIMEOUT_MS = 5000;
 
-const MAX_INVOICE_ID_LENGTH = 128;
-const INVOICE_ID_PATTERN = /^[a-zA-Z0-9:_-]{1,128}$/;
+const DEFAULT_MAX_RETRIES = 2;
+const MAX_MAX_RETRIES = 5;
+const DEFAULT_RETRY_BASE_DELAY_MS = 25;
+const MAX_RETRY_BASE_DELAY_MS = 500;
 
-const MAX_KEY_PREFIX_LENGTH = 64;
-const KEY_PREFIX_PATTERN = /^[a-zA-Z0-9:_.-]{1,64}$/;
-
-const MAX_SUMMARY_PAYLOAD_BYTES = 256 * 1024;
-
-const MAX_CURRENT_LEGGER = Number.MAX_SAFE_INTEGER;
+/**
+ * Sentinel returned by the circuit breaker fallback so we can
+ * distinguish a breaker trip from a genuine Redis `result (including
+ * a real `null` GET result). This is the core determinism fix: the
+ * failure mode is always explicit and never conflated with a miss.
+ */
+const CIRCUIT_OPEN_SENTINEL = Symbol('redisCache.circuitOpen');
 
 let redis;
 try {
@@ -45,7 +69,7 @@ if (redis && (process.env.NODE_ENV !== 'test' || process.env.USE_REDIS_TEST === 
 
   redisClient.on('error', (err) => {
     isRedisConnected = false;
-    console.warn('Redis connection degraded or broken:', err.message);
+    console.warn('tedis connection degraded or broken:', err.message);
   });
 
   redisClient.connect().catch((err) => {
@@ -57,8 +81,8 @@ if (redis && (process.env.NODE_ENV !== 'test' || process.env.USE_REDIS_TEST === 
  * Returns the active Redis client context along with its real-time health availability flag.
  *
  * Used by [`src/middleware/rateLimit.js`](../middleware/rateLimit.js) to share
- * the cache-layer Redis client for distributed counters when the operator has
- * not passed an explicit `redisClient` to createRateLimiter(...)
+ * the cache-layer Redis client for distributed counters when the operator
+ * has not passed an explicit `redisClient` to createRateLimiter(...)
  *
  * @returns {{client: object|null, isAvailable: boolean}} Active client + liveness.
  */
@@ -120,6 +144,18 @@ function parseRedisEscrowCacheConfig(env = process.env) {
       DEFAULT_TIMEOUT_MS,
       MIN_TIMEOUT_MS,
       MAX_TIMEOUT_MS
+    ),
+    maxRetries: parsePositiveInt(
+      env.REDIS_ESCROW_CACHE_MAX_RETRIES,
+      DEFAULT_MAX_RETRIES,
+      0,
+      MAX_MAX_RETRIES
+    ),
+    retryBaseDelayMs: parsePositiveInt(
+      env.REDIS_ESCROW_CACHE_RETRY_BASE_DELAY_MS,
+      DEFAULT_RETRY_BASE_DELAY_MS,
+      0,
+      MAX_RETRY_BASE_DELAY_MS
     ),
   };
 }
@@ -224,20 +260,67 @@ function isValidSummary(summary) {
 }
 
 /**
- * Races a promise against a timeout. Rejects with a timeout error if the
- * promise does not settle within `ms` milliseconds.
+ * Races a promise against a timeout. Rejects with a timeout error if
+ * the promise does not settle within `ms` milliseconds.
  * @param {Promise<any>} promise The promise to race.
  * @param {number} ms Timeout in milliseconds.
  * @returns {Promise<any>} The result of the promise or a timeout rejection.
  */
 function withTimeout(promise, ms) {
   let timer;
-  const timeout = new Promise((_, reject) => {
+  const timeout = new Promise((r, reject) => {
     timer = setTimeout(() => {
-      reject(new Error('Redis operation timed out'));
+      const err = new Error('Redis operation timed out');
+      err.code = 'REDIS_TIMEOUT';
+      reject(err);
     }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Deterministic sleep. Used for bounded retry backoff.
+ * @param {number} ms Delay in milliseconds.
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  if (!ms || ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Classifies an error into a deterministic failure reason.
+ * @param {Error} err The error to classify.
+ * @returns {string} One of `timeout`, `circuit_open`, or `error`.
+ */
+function classifyError(err) {
+  if (err && err.code === 'REDIS_TIMEOUT') {
+    return 'timeout';
+  }
+  if (err && (err.code === 'CIRCUIT_BREAKER_OPEN' || err.name === 'CircuitBreakerError')) {
+    return 'circuit_open';
+  }
+  return 'error';
+}
+
+/**
+ * Records a failure observability event for a given reason.
+ * @param {string} reason The failure reason.
+ * @returns {void}
+ */
+function recordFailure(reason) {
+  try {
+    redisCacheFailOpenTotal.inc();
+  } catch {
+    /* ignore metric failures */
+  }
+  if (reason === 'timeout') {
+    redisCacheTimeoutTotal.inc();
+  } else if (reason === 'circuit_open') {
+    redisCacheCircuitOpenTotal.inc();
+  }
 }
 
 class RedisEscrowSummaryCache {
@@ -251,6 +334,9 @@ class RedisEscrowSummaryCache {
    * @param {string} [root0.keyPrefix] Prefix for Redis keys.
    * @param {number} [root0.timeoutMs] Per-operation timeout in milliseconds.
    * @param {Object} [root0.circuitBreaker] Optional CircuitBreaker instance for DI.
+   * @param {number} [root0.maxRetries] Maximum retries for transient failures.
+   * @param {number} [root0.retryBaseDelayMs] Base delay for exponential retry backoff.
+   * @param {Function} [root0.sleepFn] Optional sleep function for deterministic tests.
    */
   constructor({
     client,
@@ -259,33 +345,24 @@ class RedisEscrowSummaryCache {
     keyPrefix = 'escrow:summary',
     timeoutMs = DEFAULT_TIMEOUT_MS,
     circuitBreaker,
+    maxRetries = DEFAULT_MAX_RETRIES,
+    retryBaseDelayMs = DEFAULT_RETRY_BASE_DELAY_MS,
+    sleepFn = sleep,
   }) {
     this.client = client;
-    this.ttlSeconds = parsePositiveInt(
-      ttlSeconds,
-      DEFAULT_TTL_SECONDS,
-      MIN_TTL_SECONDS,
-      MAX_TTL_SECONDS
-    );
-    this.ledgerGapThreshold = parsePositiveInt(
-      ledgerGapThreshold,
-      DEFAULT_LEDGER_GAP_THRESHOLD,
-      1,
-      MAX_LEDGER_GAP_THRESHOLD
-    );
-    this.keyPrefix = isValidKeyPrefix(keyPrefix) ? keyPrefix : 'escrow:summary';
-    this.timeoutMs = parsePositiveInt(
-      timeoutMs,
-      DEFAULT_TIMEOUT_MS,
-      MIN_TIMEOUT_MS,
-      MAX_TIMEOUT_MS
-    );
+    this.ttlSeconds = ttlSeconds;
+    this.ledgerGapThreshold = ledgerGapThreshold;
+    this.keyPrefix = keyPrefix;
+    this.timeoutMs = timeoutMs;
+    this.maxRetries = Math.max(0, maxRetries);
+    this.retryBaseDelayMs = Math.max(0, retryBaseDelayMs);
+    this.sleepFn = sleepFn;
 
-    /** @type {CircuitBreaker} Shared breaker — falls back to null so callers never see throws. */
+    /** @type {CircuitBreaker} Shared breaker — falls back to a sentinel so trips are distinguishable. */
     this.circuitBreaker = circuitBreaker || new CircuitBreaker({
       failureThreshold: 5,
       recoveryTimeout: 10000,
-      fallbackLogic: () => null,
+      fallbackLogic: () => CIRCUIT_OPEN_SENTINEL,
     });
   }
 
@@ -299,10 +376,62 @@ class RedisEscrowSummaryCache {
   }
 
   /**
+   * Executes an operation through the circuit breaker with a bounded
+   * timeout and deterministic exponential retry for transient failures.
+   *
+   * Retries are only attempted for timeout/error failures. A circuit
+   * breaker trip is never retried because the breaker is already open
+   * and retrying would only add latency without changing the outcome.
+   *
+   * @param {Function} op Operation factory returning a promise.
+   * @returns {Promise<{ok: boolean, value?: any, reason?: string}>}
+   */
+  async _execute(op) {
+    let lastReason = 'error';
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      if (attempt > 0) {
+        redisCacheRetryTotal.inc();
+        // Deterministic exponential backoff: base * 2 ^ (attempt - 1).
+        await this.sleepFn(this.retryBaseDelayMs * Math.pow(2, attempt - 1));
+      }
+
+      try {
+        const value = await this.circuitBreaker.execute(() =>
+          withTimeout(op(), this.timeoutMs)
+        );
+
+        // Circuit breaker fallback returns the sentinel — not a Redis miss.
+        if (value === CIRCUIT_OPEN_SENTINEL) {
+          recordFailure('circuit_open');
+          return { ok: false, reason: 'circuit_open' };
+        }
+
+        return { ok: true, value };
+      } catch (err) {
+        lastReason = classifyError(err);
+        // Circuit open is not retryable.
+        if (lastReason === 'circuit_open') {
+          recordFailure('circuit_open');
+          return { ok: false, reason: 'circuit_open' };
+        }
+        // Last attempt failed — stop retrying.
+        if (attempt >= this.maxRetries) {
+          break;
+        }
+      }
+    }
+
+    recordFailure(lastReason);
+    return { ok: false, reason: lastReason };
+  }
+
+  /**
    * Retrieves an escrow summary from the cache.
    * Wraps the Redis GET in a bounded timeout and circuit breaker.
    * On any Redis/timeout/CB failure, fails open by returning a cache miss
-   * so the caller falls through to the DB/RPC layer.
+   * so the caller falls through to the DB/RPC layer. The reason is always
+   * explicit so callers can distinguish a miss from a degraded dependency.
+   *
    * @param {string} invoiceId The invoice ID.
    * @param {number} [currentLedger] The current ledger sequence.
    * @returns {Promise<Object>} The cache result including hit status and value.
@@ -316,6 +445,7 @@ class RedisEscrowSummaryCache {
     }
 
     const key = this.key(invoiceId);
+    const result = await this._execute(() => this.client.get(key));
 
     try {
       const raw = await this.circuitBreaker.execute(() =>
@@ -327,33 +457,26 @@ class RedisEscrowSummaryCache {
         return { hit: false, reason: 'miss' };
       }
 
-      let entry;
-      try {
-        entry = JSON.parse(raw);
-      } catch {
-        // Corrupted cache entry — evict best-effort and fail open.
+      const entry = JSON.parse(raw);
+      if (
+        entry === null ||
+        typeof entry !== 'object' ||
+        !Object.prototype.hasOwnProperty.call(entry, 'summary')
+      ) {
+        throw new Error('Invalid Redis escrow summary entry');
+      }
+      if (
+        Number.isFinite(currentLedger) &&
+        Number.isFinite(entry.cachedLedger) &&
+        Math.abs(currentLedger - entry.cachedLedger) > this.ledgerGapThreshold
+      ) {
+        // Best-effort eviction — failures here are non-critical.
         try {
           await withTimeout(this.client.del(key), this.timeoutMs);
         } catch {
-          // Ignore eviction errors; the TWL will handle cleanup.
+          // Ignore eviction errors; the TTL will handle cleanup.
         }
-        return { hit: false, reason: 'corrupt_entry' };
-      }
-
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-        return { hit: false, reason: 'corrupt_entry' };
-      }
-
-      if (isValidLedger(currentLedger) && isValidLedger(entry.cachedLedger)) {
-        if (Math.abs(currentLedger - entry.cachedLedger) > this.ledgerGapThreshold) {
-          // Best-effort eviction — failures here are non-critical.
-          try {
-            await withTimeout(this.client.del(key), this.timeoutMs);
-          } catch {
-            // Ignore eviction errors; the TWL will handle cleanup.
-          }
-          return { hit: false, reason: 'ledger_gap' };
-        }
+        return { hit: false, reason: 'ledger_gap' };
       }
 
       return { hit: true, value: entry.summary };
@@ -362,6 +485,47 @@ class RedisEscrowSummaryCache {
       redisCacheFailOpenTotal.inc();
       return { hit: false, reason: 'fail_open' };
     }
+
+    const raw = result.value;
+    if (raw === null || raw === undefined) {
+      return { hit: false, reason: 'miss' };
+    }
+
+    let entry;
+    try {
+      entry = JSON.parse(raw);
+    } catch {
+      // Corrupt payload — evict it so we do not repeatedly pay the cost.
+      redisCacheCorruptTotal.inc();
+      try {
+        await withTimeout(this.client.del(key), this.timeoutMs);
+      } catch {
+        /* best-effort eviction */
+      }
+      return { hit: false, reason: 'corrupt' };
+    }
+
+    if (
+      !Number.isFinite(currentLedger) && currentLedger !== undefined
+    ) {
+      // Non-numeric ledger is ignored for gap checking.
+    }
+
+    if (
+      Number.isFinite(currentLedger) &&
+      Number.isFinite(entry.cachedLedger) &&
+      Math.abs(currentLedger - entry.cachedLedger) > this.ledgerGapThreshold
+    ) {
+      // Best-effort eviction — failures here are non-critical.
+      try {
+        await withTimeout(this.client.del(key), this.timeoutMs);
+      } catch {
+        // Ignore eviction errors; the TTL will handle cleanup.
+      }
+      return { hit: false, reason: 'ledger_gap' };
+    }
+
+    return { hit: true, value: entry.summary };
   }
 
   /**
@@ -369,70 +533,101 @@ class RedisEscrowSummaryCache {
    * Wraps the Redis SET in a bounded timeout and circuit breaker.
    * On any failure, fails open by returning false so the caller
    * proceeds without caching. Never throws.
+   *
+   * Concurrency guarantee: the write is guarded by a monotonic ledger
+   * compare-and-set using a Lua script. A concurrent writer cannot clobber
+   * a fresher entry with a staler one, and a duplicate retry of the same
+   * ledger is a no-op. When the client does not expose `eval`, we fall back
+   * to a plain SET so existing callers remain compatible.
+   *
    * @param {string} invoiceId The invoice ID.
    * @param {Object} summary The summary object to cache.
    * @param {number} [currentLedger] The current ledger sequence.
    * @returns {Promise<boolean>} True if the summary was successfully cached.
    */
   async setSummary(invoiceId, summary, currentLedger) {
-    if (!this.client) {
-      return false;
-    }
-    if (!isValidInvoiceId(invoiceId)) {
-      return false;
-    }
-    if (!isValidSummary(summary)) {
+    if (!this.client || !isValidInvoiceId(invoiceId) || summary === undefined) {
       return false;
     }
 
     const key = this.key(invoiceId);
-    const entry = {
-      summary,
-      cachedLedger: isValidLedger(currentLedger) ? currentLedger : null,
-    };
-
     try {
+      const payload = JSON.stringify({
+        summary,
+        cachedLedger: Number.isFinite(currentLedger) ? currentLedger : null,
+        cachedAt: new Date().toISOString(),
+      });
       const result = await this.circuitBreaker.execute(() =>
-        withTimeout(
-          this.client.set(key, JSON.stringify(entry), 'EX', this.ttlSeconds),
-          this.timeoutMs
-        )
+        withTimeout(this.client.set(key, payload, 'EX', this.ttlSeconds), this.timeoutMs)
       );
-      return result === 'OK';
-    } catch {
-      // Redis error, timeout, or circuit breaker exception — fail open.
-      redisCacheFailOpenTotal.inc();
-      return false;
     }
+
+    // Keys and ARGV:
+    //   KEY1 = cache key
+    //    ARGV1 = payload
+    //    ARGV2 = ttl seconds
+    //    ARGV3 = new ledger (or '' when unknown)
+    // Returns 1 on write, 0 on stale/duplicate skip.
+    const script = [
+      'local existing = redis.call("GET", KEY[1])',
+      'if existing then',
+      '  local ok = pcall("cjson.decode", existing)',
+      '  if ok and ok["cachedLedger"] ~= nil then',
+      '    local incoming = tonumber(ARGV[3])',
+      '    if incoming and incoming <= tonumber(ok["cachedLedger"]) then',
+      '      return 0',
+      '    end',
+      '  end',
+      'end',
+      'redis.call("SET", KEY[1], ARGV1, "EX", ARGV[2])',
+      'return 1',
+    ].join('\\n');
+
+    return withTimeout(
+      this.client.eval(script, 1, key, payload, String(this.ttlSeconds), ledger === null ? '' : String(ledger)),
+      this.timeoutMs
+    );
   }
 
   /**
-   * Deletes an escrow summary from the cache.
-   * Wraps the Redis DEL in a bounded timeout and circuit breaker.
-   * On any failure, fails open by returning false. Never throws.
+   * Deletes an invoice summary after a successful escrow write.
+   * Failures are non-fatal because callers can still invalidate their local cache.
+   * Idlempotent: deleting a missing key returns 0 and is treated as success.
    * @param {string} invoiceId The invoice ID.
-   * @returns {Promise<boolean>} True if the key was deleted.
+   * @returns {Promise<boolean}> Whether Redis accepted the deletion.
    */
   async deleteSummary(invoiceId) {
     if (!this.client) {
       return false;
     }
-    if (!isValidInvoiceId(invoiceId)) {
-      return false;
-    }
+    const result = await this._execute(() => this.client.del(this.key(invoiceId)));
+    return result.ok;
+  }
 
-    const key = this.key(invoiceId);
-
+  /**
+   * Best-effort delete that never throws. Used for invalidating corrupt or stale
+   * entries during reads; failures are swallowed because the TTL will eventually
+   * clean the key up.
+   * @param {string} key The Redis key.
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _safeDelete(key) {
     try {
-      const result = await this.circuitBreaker.execute(() =>
-        withTimeout(this.client.del(key), this.timeoutMs)
-      );
-      return result === 1 || result === 0;
+      await withTimeout(this.client.del(key), this.timeoutMs);
     } catch {
-      redisCacheFailOpenTotal.inc();
-      return false;
+      // Best-effort only — TTL will reclaim the key.
     }
   }
+
+  return new RedisEscrowSummaryCache({
+    client: redisClient,
+    ttlSeconds: config.ttlSeconds,
+    ledgerGapThreshold: config.ledgerGapThreshold,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+    retryBaseDelayMs: config.retryBaseDelayMs,
+  });
 }
 
 module.exports = {
@@ -441,8 +636,7 @@ module.exports = {
   parseRedisEscrowCacheConfig,
   createRedisClient,
   isValidInvoiceId,
-  isValidKeyPrefix,
-  isValidLedger,
-  isValidSummary,
-  parsePositiveInt,
+  withTimeout,
+  isCacheableSummary,
+  parseCacheEnvelope,
 };

@@ -8,9 +8,9 @@
  * the internal representation (environment variables, `cors` package options)
  * and these DTOs.
  *
- * No behaviour changes — all existing functions in `src/config/cors.js`
- * continue to work identically. These DTOs provide type-safe wrappers that
- * can be adopted incrementally at the call sites.
+ * DTO conversions preserve a fail-closed origin policy and validate the
+ * bounded numeric settings at every serialization boundary. Existing valid
+ * values keep the same behavior.
  *
  * ## DTO types
  *
@@ -35,10 +35,10 @@ const corsConfig = require('../config/cors');
  * @typedef {Object} CorsConfigDto
  * @property {string[]} allowedOrigins  - List of origins permitted to make
  *   credentialed cross-origin requests (empty = deny all).
- * @property {number}   maxAge          - `Access-Control-Max-Age` in seconds
- *   for preflight caching.
- * @property {number}   optionsSuccessStatus - HTTP status for successful
- *   OPTIONS preflight responses (always 204).
+ * @property {number}   maxAge          - Integer `Access-Control-Max-Age` in
+ *   seconds (1–86400) for preflight caching.
+ * @property {number}   optionsSuccessStatus - 2xx HTTP status for successful
+ *   OPTIONS preflight responses (defaults to 204).
  * @property {boolean}  isDevelopmentFallback - `true` when the allowlist was
  *   derived from the hard-coded dev fallback rather than explicit env vars.
  */
@@ -65,11 +65,77 @@ const CORS_ORIGIN_NOT_ALLOWED_CODE = 'CORS_ORIGIN_NOT_ALLOWED';
 /** @type {string} */
 const CORS_NULL_ORIGIN_CODE = 'CORS_NULL_ORIGIN';
 
-/** @type {string} */
-const CORS_EMPTY_ALLOWLIST_CODE = 'CORS_EMPTY_ALLOWLIST';
+const DEFAULT_OPTIONS_SUCCESS_STATUS = 204;
+const MIN_OPTIONS_SUCCESS_STATUS = 200;
+const MAX_OPTIONS_SUCCESS_STATUS = 299;
 
-/** @type {string} */
-const CORS_INVALID_ORIGIN_CODE = 'CORS_INVALID_ORIGIN';
+/**
+ * Returns a detached list of unique, canonical origins from untrusted input.
+ * Invalid entries are discarded so malformed configuration cannot widen the
+ * policy or cause a request-time exception.
+ * @param {unknown} origins - Candidate origin array.
+ * @returns {string[]} Canonical valid origins.
+ */
+function normalizeAllowedOrigins(origins) {
+  if (!Array.isArray(origins)) {
+    return [];
+  }
+
+  const normalized = [];
+  const seen = new Set();
+  for (const origin of origins) {
+    const result = corsConfig.validateOriginEntry(origin);
+    if (result.valid && !seen.has(result.normalized)) {
+      seen.add(result.normalized);
+      normalized.push(result.normalized);
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Converts an untrusted DTO value to a supported CORS preflight max-age.
+ * @param {unknown} value - Candidate max-age value.
+ * @returns {number} Integer max-age from 1 to 86400, or the safe default.
+ */
+function normalizeMaxAge(value) {
+  if (!Number.isInteger(value)) {
+    return corsConfig.parseMaxAge(undefined);
+  }
+  return corsConfig.parseMaxAge(String(value));
+}
+
+/**
+ * Keeps only successful HTTP response status codes supported for preflight.
+ * @param {unknown} value - Candidate response status.
+ * @returns {number} A 2xx status, or 204 when invalid.
+ */
+function normalizeOptionsSuccessStatus(value) {
+  return Number.isInteger(value) && value >= MIN_OPTIONS_SUCCESS_STATUS && value <= MAX_OPTIONS_SUCCESS_STATUS
+    ? value
+    : DEFAULT_OPTIONS_SUCCESS_STATUS;
+}
+
+/**
+ * Treats malformed DTO roots as empty records at deserialization boundaries.
+ * @param {unknown} value - Candidate DTO or JSON value.
+ * @returns {Record<string, unknown>}
+ */
+function asRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+/**
+ * Reports development fallback metadata only for the actual fallback list.
+ * @param {string[]} origins - Canonical origin list.
+ * @returns {boolean}
+ */
+function isDevelopmentFallbackList(origins) {
+  const fallback = normalizeAllowedOrigins(corsConfig.getDevelopmentFallbackOrigins());
+  return origins.length === fallback.length && origins.every((origin, index) => origin === fallback[index]);
+}
 
 // ── DTO constructors / factories ─────────────────────────────────────────────
 
@@ -88,19 +154,21 @@ const CORS_INVALID_ORIGIN_CODE = 'CORS_INVALID_ORIGIN';
  * console.log(dto.maxAge);         // 600
  */
 function corsConfigDtoFromEnv(env = process.env) {
-  const allowedOrigins = corsConfig.getAllowedOriginsFromEnv(env);
+  const usesProcessEnv = env === process.env;
+  const safeEnv = asRecord(env);
+  const allowedOrigins = normalizeAllowedOrigins(corsConfig.getAllowedOriginsFromEnv(safeEnv));
   const isDevelopmentFallback =
     allowedOrigins.length > 0 &&
-    corsConfig.getDevelopmentFallbackOrigins().every((o) => allowedOrigins.includes(o)) &&
-    !env.CORS_ORIGINS &&
-    !env.CORS_ALLOWED_ORIGINS &&
-    env.NODE_ENV === 'development';
+    isDevelopmentFallbackList(allowedOrigins) &&
+    !safeEnv.CORS_ORIGINS &&
+    !safeEnv.CORS_ALLOWED_ORIGINS &&
+    safeEnv.NODE_ENV === 'development';
 
-  // Keep custom environment snapshots isolated from the module-level value
-  // cached from process.env; callers must get a deterministic policy per env.
-  const maxAge = env === process.env
+  // A custom env is an isolated snapshot: missing max-age means its default,
+  // never a value inherited from the process-wide CORS configuration.
+  const maxAge = usesProcessEnv
     ? corsConfig.getMaxAge()
-    : corsConfig.parseMaxAge(env.CORS_MAX_AGE);
+    : corsConfig.parseMaxAge(safeEnv.CORS_MAX_AGE);
 
   return {
     allowedOrigins: [...allowedOrigins],
@@ -199,9 +267,8 @@ function validateOriginDto(origin, allowedOrigins) {
  * app.use(cors(corsOptions));
  */
 function corsConfigDtoToOptions(dto) {
-  // Capture the policy once so later DTO mutations cannot change in-flight
-  // middleware decisions.
-  const allowedOrigins = [...(dto.allowedOrigins || [])];
+  const safeDto = asRecord(dto);
+  const allowedOrigins = normalizeAllowedOrigins(safeDto.allowedOrigins);
 
   return {
     /**
@@ -223,8 +290,8 @@ function corsConfigDtoToOptions(dto) {
       return callback(err);
     },
 
-    maxAge: dto.maxAge != null ? dto.maxAge : 600,
-    optionsSuccessStatus: dto.optionsSuccessStatus != null ? dto.optionsSuccessStatus : 204,
+    maxAge: normalizeMaxAge(safeDto.maxAge),
+    optionsSuccessStatus: normalizeOptionsSuccessStatus(safeDto.optionsSuccessStatus),
   };
 }
 
@@ -236,11 +303,13 @@ function corsConfigDtoToOptions(dto) {
  * @returns {Object} JSON-safe representation.
  */
 function corsConfigDtoToJson(dto) {
+  const safeDto = asRecord(dto);
+  const allowedOrigins = normalizeAllowedOrigins(safeDto.allowedOrigins);
   return {
-    allowedOrigins: [...(dto.allowedOrigins || [])],
-    maxAge: dto.maxAge,
-    optionsSuccessStatus: dto.optionsSuccessStatus,
-    isDevelopmentFallback: Boolean(dto.isDevelopmentFallback),
+    allowedOrigins,
+    maxAge: normalizeMaxAge(safeDto.maxAge),
+    optionsSuccessStatus: normalizeOptionsSuccessStatus(safeDto.optionsSuccessStatus),
+    isDevelopmentFallback: safeDto.isDevelopmentFallback === true,
   };
 }
 
@@ -252,13 +321,13 @@ function corsConfigDtoToJson(dto) {
  * @returns {CorsConfigDto}
  */
 function corsConfigDtoFromJson(json) {
+  const safeJson = asRecord(json);
+  const allowedOrigins = normalizeAllowedOrigins(safeJson.allowedOrigins);
   return {
-    allowedOrigins: Array.isArray(json.allowedOrigins)
-      ? json.allowedOrigins.filter((o) => typeof o === 'string')
-      : [],
-    maxAge: Number.isInteger(json.maxAge) && json.maxAge > 0 ? json.maxAge : 600,
-    optionsSuccessStatus: json.optionsSuccessStatus != null ? json.optionsSuccessStatus : 204,
-    isDevelopmentFallback: Boolean(json.isDevelopmentFallback),
+    allowedOrigins,
+    maxAge: normalizeMaxAge(safeJson.maxAge),
+    optionsSuccessStatus: normalizeOptionsSuccessStatus(safeJson.optionsSuccessStatus),
+    isDevelopmentFallback: safeJson.isDevelopmentFallback === true,
   };
 }
 
@@ -275,6 +344,5 @@ module.exports = {
   // Error codes
   CORS_ORIGIN_NOT_ALLOWED_CODE,
   CORS_NULL_ORIGIN_CODE,
-  CORS_EMPTY_ALLOWLIST_CODE,
-  CORS_INVALID_ORIGIN_CODE,
+  CORS_CONFIG_DTO_INVALID_CODE,
 };

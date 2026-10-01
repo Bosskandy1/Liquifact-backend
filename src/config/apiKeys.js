@@ -66,12 +66,12 @@ const API_KEY_PREFIX = 'lf_';
  * All scopes recognised by the system.
  * @type {string[]}
  */
-const VALID_SCOPES = [
+const VALID_SCOPES = Object.freeze([
   'invoices:read',
   'invoices:write',
   'escrow:read',
   'admin',
-];
+]);
 
 /**
  * The minimum required length of the full API key (prefix included).
@@ -194,7 +194,10 @@ const RETRYABLE_OS_ERROR_CODES = new Set([
  * treated as an unknown / unsupported key.
  * @type {Set<string>}
  */
-const KNOWN_ENTRY_FIELDS = new Set(['key', 'clientId', 'scopes', 'revoked']);
+const KNOWN_ENTRY_FIELD_NAMES = Object.freeze(['key', 'clientId', 'scopes', 'revoked']);
+const KNOWN_ENTRY_FIELD_SET = new Set(KNOWN_ENTRY_FIELD_NAMES);
+// Keep the historical Set export, but do not let callers mutate validation.
+const KNOWN_ENTRY_FIELDS = new Set(KNOWN_ENTRY_FIELD_NAMES);
 
 /**
  * @typedef {Object} ApiKeyEntry
@@ -408,7 +411,9 @@ function logApiKeyConfigFailure(verdict, context) {
  * @throws {ApiKeyConfigError} When any unknown field is present.
  */
 function rejectUnknownFields(entry, index) {
-  const extraKeys = Object.keys(entry).filter((k) => !KNOWN_ENTRY_FIELDS.has(k));
+  const extraKeys = Object.keys(entry).filter(
+    (k) => !KNOWN_ENTRY_FIELD_SET.has(k)
+  );
   if (extraKeys.length > 0) {
     throw entryError(
       `unknown field(s) "${extraKeys.join('", "')}" — only "key", "clientId", "scopes", and "revoked" are supported`,
@@ -617,18 +622,25 @@ function parseApiKeys(raw) {
  */
 function buildKeyRegistry(entries) {
   if (!Array.isArray(entries)) {
-    throw new ApiKeyConfigError('API_KEYS: entries must be an array', {
-      code: API_KEY_CONFIG_ERROR_CODES.ENTRIES_NOT_ARRAY,
-    });
+    throw new Error('API_KEYS: entries must be an array');
   }
 
   const registry = new Map();
 
-  entries.forEach((entry) => {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw new ApiKeyConfigError('API_KEYS: every entry must be an object', {
-        code: API_KEY_CONFIG_ERROR_CODES.ENTRY_NOT_OBJECT,
-      });
+  // Validate and normalize every input, even for callers that bypass parsing.
+  // The local map is returned only after all entries pass validation.
+  for (const [index, candidate] of entries.entries()) {
+    const validated = validateEntry(candidate, index);
+    // The registry owns an immutable snapshot; caller-owned objects and arrays
+    // cannot later change key identity, client metadata, revocation, or scopes.
+    const entry = Object.freeze({
+      ...validated,
+      scopes: Object.freeze([...validated.scopes]),
+    });
+    if (registry.has(entry.key)) {
+      throw new Error(
+        `API_KEYS: duplicate key detected for clientId "${entry.clientId}"`
+      );
     }
 
     if (registry.has(entry.key)) {

@@ -1,1 +1,584 @@
-LyoqCiAqIENlbnRyYWxpemVkIHR5cGVkIGNvbmZpZ3VyYXRpb24gbW9kdWxlIHdpdGggcnVudGltZSB2YWxpZGF0aW9uLgogKiBVc2VzIFpvZCBmb3Igc2NoZW1hIHZhbGlkYXRpb24gYW5kIHR5cGUgc2FmZXR5LgogKiBAbW9kdWxlIGNvbmZpZwogKi8KCmNvbnN0IHogPSByZXF1aXJlKCd6b2QnKTsKCi8qKiBFeHByZXNzLWNvbXBhdGlibGUgcmVxdWVzdCBzaXplIHN0cmluZy4gQHR5cGUge3ouWm9kRGVmYXVsdDx6LlpvZFN0cmluZz59ICovCmNvbnN0IEludm9pY2VGaWxlTWF4U2l6ZVNjaGVtYSA9IHoKICAuc3RyaW5nKCkKICAudHJpbSgpCiAgLnJlZ2V4KC9eXGQrKD86XC5cZCspPyg/OmJ8a2J8bWJ8Z2IpJC9pLCB7CiAgICBtZXNzYWdlOiAnSU5WT0lDRV9GSUxFX01BWF9TSVpFIG11c3QgYmUgYSBzaXplIHN1Y2ggYXMgNTEya2Igb3IgNW1iLicsCiAgfSkKICAuZGVmYXVsdCgnNW1iJyk7CgovKioKICogQ29tcGxldGUgY29uZmlndXJhdGlvbiBzY2hlbWEgd2l0aCBkZWZhdWx0cyBhbmQgdmFsaWRhdGlvbi4KICogU2VjcmV0cyBoYXZlIG5vIGRlZmF1bHRzIC0gbXVzdCBiZSBwcm92aWRlZC4KICogQHR5cGUge3ouWm9kT2JqZWN0PGFueT59CiAqLwpjb25zdCBDb25maWdTY2hlbWEgPSB6CiAgLm9iamVjdCh7CiAgICBOT0RFX0VOVjogei5lbnVtKFsnZGV2ZWxvcG1lbnQnLCAncHJvZHVjdGlvbicsICd0ZXN0J10pLmRlZmF1bHQoJ2RldmVsb3BtZW50JyksCiAgICBQT1JUOiB6LmNvZXJjZS5udW1iZXIoKS5taW4oMSkubWF4KDY1NTM1KS5kZWZhdWx0KDMwMDEpLAogICAgSldUX1NFQ1JFVDogei5zdHJpbmcoKS5taW4oMzIpLCAvLyBObyBkZWZhdWx0IGZvciBzZWN1cml0eQogICAgSldUX0FM R09SSVRITVM6IHouc3RyaW5nKCkub3B0aW9uYWwoKS5kZWZhdWx0KCdIUzI1NicpLCAvLyBDb21tYS1zZXBhcmF0ZWQgYWxsb3dsaXN0LCBlLmcuIEhTMjU2LFJTMjU2CiAgICBKV1RfSVNTVUVSOiB6LnN0cmluZygpLm9wdGlvbmFsKCksIC8vIE9wdGlvbmFsIGlzc3VlciBjbGFpbSB0byBlbmZvcmNlCiAgICBKV1RfQVVESUVOQ0U6IHouc3RyaW5nKCkub3B0aW9uYWwoKSwgLy8gT3B0aW9uYWwgYXVkaWVuY2UgY2xhaW0gdG8gZW5mb3JjZQogICAgQ1VSU09SX1NFQ1JFVDogei5zdHJpbmcoKS5taW4oMzIpLm9wdGlvbmFsKCksIC8vIERlZGljYXRlZCBtYXJrZXRwbGFjZSBjdXJzb3IgSE1BQyBzZWNyZXQKICAgIENVUlNPUl9UVExfRU5BQkxFRDogei5lbnVtKFsndHJ1ZScsICdmYWxzZSddKS5kZWZhdWx0KCdmYWxzZScpLAogICAgQ1VSU09SX1RUTF9TRUNPTkRTOiB6LmNvZXJjZS5udW1iZXIoKS5pbnQoKS5taW4oMSkuZGVmYXVsdCgzNjAwKSwKICAgIENPUlNfQUxMT1dFRF9PUklHSU5TOiB6LnN0cmluZygpLm9wdGlvbmFsKCksIC8vIENvbW1hLXNlcGFyYXRlZCwgb3B0aW9uYWwgZm9yIGRldiBmYWxsYmFja3MKICAgIFNPUk9CQU5fUlBDX1VSTDogei5zdHJpbmcoKS51cmwoKS5kZWZhdWx0KCdodHRwczovL3Nvcm9iYW4tdGVzdG5ldC5zdGVsbGFyLm9yZycpLAogICAgTkVUV09SS19QQVNTVEhSQVNFOiB6LnN0cmluZygpLmRlZmF1bHQoJ1Rlc3QgU0RGIE5ldHdvcmsgOyBTZXB0ZW1iZXIgMjAxNScpLAogICAgU09ST0JBTl9CQVRDSF9DT05DVVJSRU5DWTogei5jb2VyY2UubnVtYmVyKCkubWluKDEpLm1heCg1MCkuZGVmYXVsdCg1KSwKICAgIFNPUk9CQU5fQkFUQ0hfVElNRU9VVF9NUzogei5jb2VyY2UubnVtYmVyKCkubWluKDEwMCkubWF4KDMwMDAwKS5kZWZhdWx0KDUwMDApLAogICAgLy8gRXNjcm93IGluZGV4ZXIgY29uZmlndXJhdGlvbgogICAgRVNDUk9XX0lOREVYRVJfRU5BQkxFRDogei5lbnVtKFsndHJ1ZScsICdmYWxzZSddKS5kZWZhdWx0KCdmYWxzZScpLAogICAgRVNDUk9XX0lOREVYRVJfU1RBTkVfVEhSRVNIT0xEX1NFQ09ORFM6IHouY29lcmNlLm51bWJlcigpLm1pbigxKS5kZWZhdWx0KDMwMCksCiAgICAvLyBFc2Nyb3cgcmVhZCBwcm9qZWN0aW9uIOKAlCBnYXRlcyB0aGUgbmV3IHByb2plY3Rpb24vY2FjaGUtYmFzZWQgZXNjcm93IHJlYWQgcGF0aAogICAgRVNDUk9XX1JFQURfUFJPSkVDVElPTl9FTkFCTEVEOiB6LmVudW0oWyd0cnVlJywgJ2ZhbHNlJ10pLmRlZmF1bHQoJ3RydWUnKSwKICAgIC8vIEludm9pY2Ugc3RhdGUgbWFjaGluZyDigJQgZ2F0ZXMgL2FwaS9pbnZvaWNlcyBzdGF0ZS10cmFuc2l0aW9uIGVuZHBvaW50cy4KICAgIC8vIFdoZW4gJ2ZhbHNlJywgdGhlIGludm9pY2Ugc3RhdGUgcm91dGVzIGFyZSBub3QgbW91bnRlZCBzbyByZXF1ZXN0cyByZXR1cm4gNDA0LgogICAgLy8gRGVmYXVsdHMgdG8gJ3RydWUnIChlbmFibGVkKSB0byBwcmVzZXJ2ZSBleGlzdGluZyBiZWhhdmlvdXIuCiAgICBJTlZPSUNFX1NUQVRFX0VOQUJMRUQ6IHouZW51bShbJ3RydWUnLCAnZmFsc2UnXSkuZGVmYXVsdCgndHJ1ZScpLAogICAgLy8gUnVudGltZSBhZG1pbiBjb25maWcgc3VyZmFjZSDigJQgZ2F0ZXMgUE9TVCAvYXBpL2FkbWluL2NvbmZpZyBhbmQKICAgIC8vIEdFVCAvYXBpL2FkbWluL2NvbmZpZy9zZWN0aW9ucy4gV2hlbiAnZmFsc2UnIHRoZSByb3V0ZXIgaXMgbm90IG1vdW50ZWQKICAgIC8vIHNvIHJlcXVlc3RzIHJldHVybiA0MDQsIGFsbG93aW5nIHRoZSBzdXJmYWNlIHRvIGJlIGRpc2FibGVkIHdpdGhvdXQgYQogICAgLy8gZGVwbG95LiBEZWZhdWx0cyB0byAndHJ1ZScgKGVuYWJsZWQpLgogICAgQ09ORklHX1JVTlRJTUVfRU5BQkxFRDogei5lbnVtKFsndHJ1ZScsICdmYWxzZSddKS5kZWZhdWx0KCd0cnVlJyksCiAgICAvLyBLWUMgcHJvdmlkZXIg4oCUIGFsbCBvcHRpb25hbCwgYnV0IFVSTCtrZXkgbXVzdCBiZSBwcm92aWRlZCB0b2dldGhlciBpbiBub24tdGVzdCBlbnZzCiAgICBLWUNfUFJPVklERVJfVVJMOiB6LnN0cmluZygpLnVybCgpLm9wdGlvbmFsKCksCiAgICBLWUNfUFJPVklERVJfQVBJX0tFWTogei5zdHJpbmcoKS5taW4oMSkub3B0aW9uYWwoKSwKICAgIEtZQ19QUk9WSURFUl9TRUNSRVQ6IHouc3RyaW5nKCkubWluKDEpLm9wdGlvbmFsKCksCiAgICAvLyBJc3N1ZSAjNTkyIOKAlCBLWUMgcHJvdmlkZXIgdHJhbnNwb3J0IGhhcmRlbmluZy4gTnVtZXJpYyBrbm9icyBhcmUgY2xhbXBlZAogICAgLy8gc28gYSB0eXBvIGNhbm5vdCBkaXNhYmxlIHRoZSB0aW1lb3V0LCBleGhhdXN0IHJldHJpZXMsIG9yIGhhbmcgdGhlIGJyZWFrZXIuCiAgICBLWUNfUFJPVklERVJfVElNRU9VVF9NUzogei5jb2VyY2UubnVtYmVyKCkubWluKDEwMCkubWF4KDMwMDAwKS5kZWZhdWx0KDUwMDApLAogICAgS1lDX1BST1ZJREVSX01BWF9SRVRSSUVTOiB6LmNvZXJjZS5udW1iZXIoKS5taW4oMCkubWF4KDEwKS5kZWZhdWx0KDMpLAogICAgS1lDX1BST1ZJREVSX0JBU0VfREVMQVlfTVM6IHouY29lcmNlLm51bWJlcigpLm1pbigwKS5tYXgoMTAwMDApLmRlZmF1bHQoMjAwKSwKICAgIEtZQ19QUk9WSURFUl9NQVhfREVMQVlfTVM6IHouY29lcmNlLm51bWJlcigpLm1pbigwKS5tYXgoNjAwMDApLmRlZmF1bHQoNTAwMCksCiAgICBLWUNfUFJPVklERVJfU0lHTl9SRVFVRVNUUzogei5lbnVtKFsndHJ1ZScsICdmYWxzZSddKS5kZWZhdWx0KCdmYWxzZScpLAogICAgS1lDX1BST1ZJREVSX1ZFUklGWV9SRVNQT05TRV9TSUdOQVRVUkU6IHouZW51bShbJ3RydWUnLCAnZmFsc2UnXSkuZGVmYXVsdCgnZmFsc2UnKSwKICAgIEtZQ19QUk9WSURFUl9DQl9GQUlMVVJFX1RIUkVTSE9MRDogei5jb2VyY2UubnVtYmVyKCkubWluKDEpLm1heCgxMDApLmRlZmF1bHQoNSksCiAgICBLWUNfUFJPVklERVJfQ0JfUkVDT1ZFUllfVElNRU9VVF9NUzogei5jb2VyY2UubnVtYmVyKCkubWluKDEwMCkubWF4KDYwMDAwKS5kZWZhdWx0KDEwMDAwKSwKICAgIC8vIEtZQyB3ZWJob29rIGluZ2VzdGlvbiBmZWF0dXJlIGZsYWcg4oCUIHNhZmUgZGVmYXVsdDogZGlzYWJsZWQKICAgIEtZQ19XRUJIT09LX0VOQUJMRUQ6IHouZW51bShbJ3RydWUnLCAnZmFsc2UnXSkuZGVmYXVsdCgnZmFsc2UnKSwKICAgIC8vIFB1YmxpYyBiYXNlIFVSTCBmb3IgdGhlIEFQSSwgdXNlZCBpbiB0aGUgT3BlbkFQSSBzcGVjIHNlcnZlcnMgYXJyYXkuCiAgICAvLyBSZXF1aXJlZCBpbiBwcm9kdWN0aW9uIGFuZCBtdXN0IHVzZSBIVFRQUy4gRmFsbHMgYmFjayB0byBsb2NhbGhvc3QgaW4gZGV2ZWxvcG1lbnQvdGVzdC4KICAgIFBVQkxJQ19BUElfQkFTRV9VUkw6IHouc3RyaW5nKCkudXJsKCkub3B0aW9uYWwoKSwKICAgIElOVk9JQ0VfRklMRV9NQVhfU0laRTogSW52b2ljZUZpbGVNYXhTaXplU2NoZW1hLAogICAgLy8gRmVhdHVyZSBmbGFnOiBnYXRlcyBQcm9tZXRoZXVzIG1ldHJpY3MgY29sbGVjdGlvbiBhbmQgdGhlIC9tZXRyaWNzIGVuZHBvaW50LgogICAgLy8gV2hlbiAnZmFsc2UnLCBhbGwgbWV0cmljIHJlY29yZGluZyBiZWNvbWVzIGEgc2lsZW50IG5vLW9wIGFuZCBHRVQgL21ldHJpY3MKICAgIC8vIHJldHVybnMgNTAzLiBEZWZhdWx0ICd0cnVlJyBwcmVzZXJ2ZXMgZXhpc3RpbmcgYmVoYXZpb3VyLgogICAgTUVUUklDU19FTkFCTEVEOiB6LmVudW0oWyd0cnVlJywgJ2ZhbHNlJ10pLmRlZmF1bHQoJ3RydWUnKSwKICB9KQogIC5zdXBlclJlZmluZSgoZGF0YSwgY3R4KSA9PiB7CiAgICBpZiAoZGF0YS5OT0RFX0VOViA9PT0gJ3Rlc3QnKSB7IHJldHVybjsgfQogICAgaWYgKGRhdGEuTk9ERV9FTlYgPT09ICdwcm9kdWN0aW9uJyAmJiAhZGF0YS5DVVJTT1JfU0VDUkVUICYmICFkYXRhLkpXVF9TRUNSRVQpIHsKICAgICAgY3R4LmFkZElzc3VlKHsKICAgICAgICBjb2RlOiB6LlpvZElzc3VlQ29kZS5jdXN0b20sCiAgICAgICAgbWVzc2FnZTogJ0NVUlNPUl9TRUNSRVQgb3IgSldUX1NFQ1JFVCBtdXN0IGJlIGNvbmZpZ3VyZWQgaW4gcHJvZHVjdGlvbi4nLAogICAgICAgIHBhdGg6IFsnQ1VSU09SX1NFQ1JFVCddLAogICAgICB9KTsKICAgIH0KICAgIGNvbnN0IGhhc1VybCA9IEJvb2xlYW4oZGF0YS5LWUNfUFJPVklERVJfVVJMKTsKICAgIGNvbnN0IGhhc0tleSA9IEJvb2xlYW4oZGF0YS5LWUNfUFJPVklERVJfQVBJX0tFWSk7CiAgICBpZiAoaGFzVXJsICE9PSBoYXNLZXkpIHsKICAgICAgY3R4LmFkZElzc3VlKHsKICAgICAgICBjb2RlOiB6LlpvZElzc3VlQ29kZS5jdXN0b20sCiAgICAgICAgbWVzc2FnZToKICAgICAgICAgICdLWUNfUFJPVklERVJfVVJMIGFuZCBLWUNfUFJPVklERVJfQVBJX0tFWSBtdXN0IGJvdGggYmUgc2V0IG9yIGJvdGggYmUgYWJzZW50JywKICAgICAgICBwYXRoOiBoYXNVcmwgPyBbJ0tZQ19QUk9WSURFUl9BUElfS0VZJ10gOiBbJ0tZQ19QUk9WSURFUl9VUkwnXSwKICAgICAgfSk7CiAgICB9CiAgICBpZiAoZGF0YS5OT0RFX0VOViA9PT0gJ3Byb2R1Y3Rpb24nKSB7CiAgICAgIGNvbnN0IGJhc2VVcmwgPSBkYXRhLlBVQkxJQ19BUElfQkFTRV9VUkw7CiAgICAgIC8vIFJlcXVpcmUgdGhlIHZhcmlhYmxlIHRvIGJlIHByZXNlbnQgaW4gcHJvZHVjdGlvbgogICAgICBpZiAoIWJhc2VVcmwpIHsKICAgICAgICBjdHguYWRkSXNzdWUoewogICAgICAgICAgY29kZTogei5ab2RJc3N1ZUNvZGUuY3VzdG9tLAogICAgICAgICAgbWVzc2FnZToKICAgICAgICAgICAgJ1BVQkxJQ19BUElfQkFTRV9VUkwgbXVzdCBiZSBzZXQgaW4gcHJvZHVjdGlvbi4gSXQgaXMgdXNlZCBpbiB0aGUgT3BlbkFQSSBzcGVjIHNlcnZlcnMgYXJyYXknLAogICAgICAgICAgcGF0aDogWydQVUJMSUNfQVBJX0JBU0VfVVJMJ10sCiAgICAgICAgfSk7CiAgICAgICAgcmV0dXJuOwogICAgICB9CiAgICAgIC8vIFJlcXVpcmUgSFRUUFMg4oCUIG5ldmVyIGFsbG93IHBsYWludGV4dCBpbiBwcm9kdWN0aW9uCiAgICAgIGxldCBwYXJzZWQ7CiAgICAgIHRyeSB7IHBhcnNlZCA9IG5ldyBVUkwoYmFzZVVybCk7IH0gY2F0Y2ggKF8pIHsgcGFyc2VkID0gbnVsbDsgfQogICAgICBpZiAoIXBhcnNlZCB8fCBwYXJzZWQucHJvdG9jb2wgIT09ICdodHRwczonKSB7CiAgICAgICAgY3R4LmFkZElzc3VlKHsKICAgICAgICAgIGNvZGU6IHouWm9kSXNzdWVDb2RlLmN1c3RvbSwKICAgICAgICAgIG1lc3NhZ2U6CiAgICAgICAgICAgICdQVUJMSUNfQVBJX0JBU0VfVVJMIG11c3QgdXNlIEhUVFBUIGluIHByb2R1Y3Rpb24uJywKICAgICAgICAgIHBhdGg6IFsnUFVCTElDX0FQSV9CQVNFX1VSTCddLAogICAgICAgIH0pOwogICAgICAgIHJldHVybjsKICAgICAgfQogICAgICAvLyBSZWplY3QgbG9vcGJhY2sgYWRkcmVzc2VzICgxMjcueC54LngsIDo6MSwgWzo6MV0sIGxvY2FsaG9zdCkKICAgICAgY29uc3QgbG9vcGJhY2tQYXR0ZXJuID0gL14obG9jYWxob3N0fDEyNyg/OlwuXGQrKXs zfDo6MXxcWzo6MV0pJC9pOwogICAgICBpZiAobG9vcGJhY2tQYXR0ZXJuLnRlc3QocGFyc2VkLmhvc3RuYW1lKSkgewogICAgICAgIGN0eC5hZGRJc3N1ZSh7CiAgICAgICAgICBjb2RlOiB6LlpvZElzc3VlQ29kZS5jdXN0b20sCiAgICAgICAgICBtZXNzYWdlOgogICAgICAgICAgICAnUFVCTElDX0FQSV9CQVNFX1VSTCBtdXN0IG5vdCBiZSBhIGxvb3BiYWNrIGFkZHJlc3MgaW4gcHJvZHVjdGlvbi4nLAogICAgICAgICAgcGF0aDogWydQVUJMSUNfQVBJX0JBU0VfVVJMJ10sCiAgICAgICAgfSk7CiAgICAgIH0KICAgIH0KICB9KTsKCi8qKgogKiBSdW50aW1lIHZhbGlkYXRlZCBjb25maWd1cmF0aW9uIG9iamVjdC4KICogQHR5cGUge3ouaW5mZXI8dHlwZW9mIENvbmZpZ1NjaGVtYT59CiAqLwpsZXQgY29uZmlnOwoKLyoqCiAqIFZhbGlkYXRlcyBlbnZpcm9ubWVudCB2YXJpYWJsZXMgYWdhaW5zdCBzY2hlbWEgYW5kIHJldHVybnMgdHlwZWQgY29uZmlnLgogKiBUaHJvd3MgWm9kRXJyb3Igb24gdmFsaWRhdGlvbiBmYWlsdXJlLgogKiBTaG91bGQgYmUgY2FsbGVkIG9uY2UgZWFybHkgaW4gYXBwIGJvb3RzdHJhcC4KICogQHJldHVybnMge3ouaW5mZXI8dHlwZW9mIENvbmZpZ1NjaGVtYT59IFZhbGlkYXRlZCBjb25maWcuCiAqLwpmdW5jdGlvbiB2YWxpZGF0ZSgpIHsKICBjb25zdCBwYXJzZWQgPSBDb25maWdTY2hlbWEuc2FmZVBhcnNlKHByb2Nlc3MuZW52KTsKICBpZiAoIXBhcnNlZC5zdWNjZXNzKSB7CiAgICB0aHJvdyBwYXJzZWQuZXJyb3I7CiAgfQogIGNvbmZpZyA9IHBhcnNlZC5kYXRhOwogIHJldHVybiBjb25maWc7Cn0KCi8qKgogKiBGb3JtYXQgYW5kIGxvZyBhIHJlZGFjdGVkIHN1bW1hcnkgb2YgdmFsaWRhdGlvbiBpc3N1ZXMgdG8gY29uc29sZS5lcnJvci4KICogTmV2ZXIgcHJpbnRzIHNlY3JldCB2YWx1ZXMgKG9ubHkga2V5IG5hbWVzIGFuZCB2YWxpZGF0aW9uIGVycm9yIG1lc3NhZ2VzKS4KICogQHBhcmFtIHt6LlpvZEVycm9yfSBlcnJvciAtIFRoZSBab2QgZXJyb3IgdG8gc3VtbWFyaXplLgogKiBAcmV0dXJucyB7dm9pZH0KICovCmZ1bmN0aW9uIGxvZ1JlZGFjdGVkU3VtbWFyeShlcnJvcikgewogIGNvbnNvbGUuZXJyb3IoJ0NvbmZpZ3VyYXRpb24gdmFsaWRhdGlvbiBmYWlsZWQ6Jyk7CiAgaWYgKGVycm9yICYmIEFycmF5LmlzQXJyYXkoZXJyb3IuaXNzdWVzKSkgewogICAgZXJyb3IuaXNzdWVzLmZvckVhY2goaXNzdWUgPT4gewogICAgICBjb25zdCBrZXkgPSBpc3N1ZS5wYXRoLmpvaW4oJy4nKTsKICAgICAgY29uc29sZS5lcnJvcihgLSBbJHtrZXl9XTogJHtpc3N1ZS5tZXNzYWdlfWApOwogICAgfSk7CiAgfSBlbHNlIHsKICAgIGNvbnNvbGUuZXJyb3IoZXJyb3IgPyBlcnJvci5tZXNzYWdlIDogJ1Vua25vd24gY29uZmlndXJhdGlvbiBlcnJvcicpOwogIH0KfQoKLyoqCiAqIEdldHRlciBmb3IgdmFsaWRhdGVkIGNvbmZpZy4gVGhyb3dzIGlmIG5vdCB2YWxpZGF0ZWQuCiAqIEByZXR1cm5zIHt6LmluZmVyPHR5cGVvZiBDb25maWdTY2hlbWE+fQogKi8KZnVuY3Rpb24gZ2V0KCkgewogIGlmICghY29uZmlnKSB7CiAgICB0aHJvdyBuZXcgRXJyb3IoJ0NvbmZpZyBub3QgdmFsaWRhdGVkLiBDYWxsIHZhbGlkYXRlKCkgZmlyc3QuJyk7CiAgfQogIHJldHVybiBjb25maWc7Cn0KCi8qKgogKiBSZXR1cm5zIGEgdmFsdWUgZnJvbSB0aGUgdmFsaWRhdGVkIGNvbmZpZ3VyYXRpb24gd2l0aCBrZXktYXdhcmUgSlNEb2MgdHlwZXMuCiAqIEB0ZW1wbGF0ZSB7a2V5b2Ygei5pbmZlcjx0eXBlb2YgQ29uZmlnU2NoZW1hPj59IEsKICogQHBhcmFtIHtLfSBrZXkgLSBWYWxpZGF0ZWQgY29uZmlndXJhdGlvbiBrZXkuCiAqIEByZXR1cm5zIHt6LmluZmVyPHR5cGVvZiBDb25maWdTY2hlbWE+W0tdfSBUaGUgdmFsaWRhdGVkIHZhbHVlIGZvciB0aGUga2V5LgogKi8KZnVuY3Rpb24gZ2V0VmFsdWUoa2V5KSB7CiAgcmV0dXJuIGdldCgpW2tleV07Cn0KCi8qKgogKiBSZXR1cm5zIHRoZSB2YWxpZGF0ZWQgaW52b2ljZSBQREYgdXBsb2FkIGxpbWl0IHVzZWQgd2hlbiByb3V0ZXMgYXJlIGJ1aWx0LgogKiBAcmV0dXJucyB7c3RyaW5nfSBFeHByZXNzLWNvbXBhdGlibGUgcmVxdWVzdCBzaXplIGxpbWl0LgogKi8KZnVuY3Rpb24gZ2V0SW52b2ljZUZpbGVNYXhTaXplKCkgewogIGlmIChjb25maWcpIHsKICAgIHJldHVybiBjb25maWcuSU5WT0lDRV9GSUxFX01BWF9TSVpFOwogIH0KICByZXR1cm4gSW52b2ljZUZpbGVNYXhTaXplU2NoZW1hLnBhcnNlKHByb2Nlc3MuZW52LklOVk9JQ0VfRklMRV9NQVhfU0laRSk7Cn0KCmNvbnN0IHNlY3VyaXR5SGVhZGVycyA9IHsKICBjb250ZW50U2VjdXJpdHlQb2xpY3k6IHsKICAgIGRpcmVjdGl2ZXM6IHsKICAgICAgZGVmYXVsdFNyYzogWyInc2VsZiciXSwKICAgICAgc2NyaXB0U3JjOiBbIidzZWxmJyJdLAogICAgICBzdHlsZVNyYzogWyInc2VsZiciXSwKICAgICAgaW1nU3JjOiBbIidzZWxmJyIsICJkYXRhOiJdLAogICAgICBjb25uZWN0U3JjOiBbIidzZWxmJyJdLAogICAgICBmb250U3JjOiBbIidzZWxmJyJdLAogICAgICBvYmplY3RTcmM6IFsiJ25vbmUnIl0sCiAgICAgIG1lZGlhU3JjOiBbIidzZWxmJyJdLAogICAgICBmcmFtZVNyYzogWyInbm9uZSciXSwKICAgICAgYmFzZVVyaTogWyInc2VsZiciXSwKICAgICAgZm9ybUFjdGlvbjogWyInc2VsZiciXQogICAgfQogIH0sCiAgc3RyaWN0VHJhbnNwb3J0U2VjdXJpdHk6IHsKICAgIG1heEFnZTogMzE1MzYwMDAsCiAgICBpbmNsdWRlU3ViRG9tYWluczogdHJ1ZSwKICAgIHByZWxvYWQ6IHRydWUKICB9LAogIHhGcmFtZU9wdGlvbnM6ICdERU5ZJywKICB4Q29udGVudFR5cGVPcHRpb25zOiAnbm9z bmlmZicsCiAgeFhTU1Byb3RlY3Rpb246ICcxOyBtb2RlPWJsb2NrJywKICByZWZlcnJlclBvbGljeTogJ25vLXJlZmVycmVyJywKICBwZXJtaXNzaW9uc1BvbGljeTogJ2dlb2xvY2F0aW9uPSgpLCBtaWNyb3Bob25lPSgpLCBjYW1lcmE9KCknCn07Cgptb2R1bGUuZXhwb3J0cyA9IHsKICB2YWxpZGF0ZSwKICBnZXQsCiAgZ2V0VmFsdWUsCiAgZ2V0SW52b2ljZUZpbGVNYXhTaXplLAogIGxvZ1JlZGFjdGVkU3VtbWFyeSwKICBzZWN1cml0eUhlYWRlcnMsCiAgQ29uZmlnU2NoZW1hLAp9Owo=
+/**
+ * Centralized typed configuration module with runtime validation.
+ * Uses Zod for schema validation and type safety.
+ *
+ * Concurrency contract
+ * --------------------
+ * This module is the single source of truth for process configuration and is
+ * read from boot code, request handlers, and background workers. It is designed
+ * to be safe under concurrent and repeated execution:
+ *
+ * 1. Atomic publication — `validate()` builds a complete candidate from a
+ *    point-in-time copy of `process.env`, then publishes it in one assignment.
+ *    Readers observe either the previous complete snapshot or the next complete
+ *    one, never a partially built object, even if `process.env` is mutated by
+ *    another code path (e.g. the admin runtime-config surface) mid-validation.
+ * 2. Immutable snapshots — published snapshots are deeply frozen, so one
+ *    consumer cannot mutate global configuration out from under another.
+ * 3. Idempotent repeats — re-validating an unchanged environment returns the
+ *    already-published snapshot instead of re-parsing it (no duplicate work, no
+ *    generation churn).
+ * 4. Single flight — a re-entrant `validate()` call cannot start a competing
+ *    parse. It returns the published snapshot, or fails fast with
+ *    `CONFIG_VALIDATION_IN_PROGRESS` when none has been published yet.
+ * 5. Fail-safe failures — a failed validation never mutates the published
+ *    snapshot, so the last known-good config keeps serving, and the failure is
+ *    observable through `getValidationState()`: staleness is never silent.
+ *
+ * @module config
+ *
+ * Compatibility contract: `validate()` is idempotent and safe to call
+ * multiple times; `get()` throws until `validate()` succeeds.
+ */
+
+const crypto = require('crypto');
+const z = require('zod');
+
+// ─── Public API version ───────────────────────────────────────────────────────
+
+/**
+ * Semantic version of the config module's public API.
+ *
+ * Bump the minor version when adding new exports.
+ * Bump the major version when removing or renaming existing exports, and include
+ * a migration guide in this file and the CHANGELOG.
+ *
+ * @type {string}
+ */
+const CONFIG_VERSION = '1.1.0';
+
+// ─── Feature-flag key type guard ─────────────────────────────────────────────
+
+/**
+ * The complete set of boolean feature-flag keys in the config schema.
+ * This tuple is the source of truth for `getFeatureFlag()` key validation.
+ *
+ * @type {readonly string[]}
+ */
+const FEATURE_FLAG_KEYS = Object.freeze([
+  'ESCROW_INDEXER_ENABLED',
+  'ESCROW_READ_PROJECTION_ENABLED',
+  'INVOICE_STATE_ENABLED',
+  'CONFIG_RUNTIME_ENABLED',
+  'KYC_WEBHOOK_ENABLED',
+  'KYC_PROVIDER_SIGN_REQUESTS',
+  'KYC_PROVIDER_VERIFY_RESPONSE_SIGNATURE',
+  'CURSOR_TTL_ENABLED',
+  'METRICS_ENABLED',
+]);
+
+/** Express-compatible request size string. @type {z.ZodDefault<z.ZodString>} */
+const InvoiceFileMaxSizeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(?:\.\d+)?(?:b|kb|mb|gb)$/i, {
+    message: 'INVOICE_FILE_MAX_SIZE must be a size such as 512kb or 5mb.',
+  })
+  .default('5mb');
+
+// ─── Main schema ──────────────────────────────────────────────────────────────
+
+/**
+ * Complete configuration schema with explicit boundaries on every field.
+ *
+ * Boundary guarantees enforced here:
+ *   1. PORT is a finite integer in [1, 65535].
+ *   2. JWT_SECRET is at least 32 characters — never has a default.
+ *   3. All numeric timeout/retry/concurrency knobs have min AND max guards so
+ *      a mis-typed value cannot push them into an unsafe or non-functional range.
+ *   4. Boolean feature flags accept only "true" | "false" — no truthy aliases.
+ *   5. URLs are parsed by Zod's url() validator before use.
+ *   6. Cross-field invariants are checked in superRefine (see below).
+ *
+ * @type {z.ZodObject<any>}
+ */
+const ConfigSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z.coerce.number().min(1).max(65535).default(3001),
+    JWT_SECRET: z.string().min(32), // No default for security
+    JWT_ALGORITHMS: z.string().optional().default('HS256'),
+    JWT_ISSUER: z.string().optional(),
+    JWT_AUDIENCE: z.string().optional(),
+    CURSOR_SECRET: z.string().min(32).optional(),
+    CURSOR_TTL_ENABLED: z.enum(['true', 'false']).default('false'),
+    CURSOR_TTL_SECONDS: z.coerce.number().int().min(1).default(3600),
+    CORS_ALLOWED_ORIGINS: z.string().optional(),
+    SOROBAN_RPC_URL: z.string().url().default('https://soroban-testnet.stellar.org'),
+
+    NETWORK_PASSPHRASE: z.string().default('Test SDF Network ; September 2015'),
+    SOROBAN_BATCH_CONCURRENCY: z.coerce.number().min(1).max(50).default(5),
+    SOROBAN_BATCH_TIMEOUT_MS: z.coerce.number().min(100).max(30000).default(5000),
+    ESCROW_INDEXER_ENABLED: z.enum(['true', 'false']).default('false'),
+    ESCROW_INDEXER_STALE_THRESHOLD_SECONDS: z.coerce.number().min(1).default(300),
+    ESCROW_READ_PROJECTION_ENABLED: z.enum(['true', 'false']).default('true'),
+    INVOICE_STATE_ENABLED: z.enum(['true', 'false']).default('true'),
+    CONFIG_RUNTIME_ENABLED: z.enum(['true', 'false']).default('true'),
+    KYC_PROVIDER_URL: z.string().url().optional(),
+
+    /** KYC API key. Must be paired with KYC_PROVIDER_URL. */
+    KYC_PROVIDER_API_KEY: z.string().min(1).optional(),
+
+    KYC_PROVIDER_SECRET: z.string().min(1).optional(),
+    KYC_PROVIDER_TIMEOUT_MS: z.coerce.number().min(100).max(30000).default(5000),
+    KYC_PROVIDER_MAX_RETRIES: z.coerce.number().min(0).max(10).default(3),
+    KYC_PROVIDER_BASE_DELAY_MS: z.coerce.number().min(0).max(10000).default(200),
+    KYC_PROVIDER_MAX_DELAY_MS: z.coerce.number().min(0).max(60000).default(5000),
+    KYC_PROVIDER_SIGN_REQUESTS: z.enum(['true', 'false']).default('false'),
+    KYC_PROVIDER_VERIFY_RESPONSE_SIGNATURE: z.enum(['true', 'false']).default('false'),
+    KYC_PROVIDER_CB_FAILURE_THRESHOLD: z.coerce.number().min(1).max(100).default(5),
+    KYC_PROVIDER_CB_RECOVERY_TIMEOUT_MS: z.coerce.number().min(100).max(60000).default(10000),
+    KYC_WEBHOOK_ENABLED: z.enum(['true', 'false']).default('false'),
+    PUBLIC_API_BASE_URL: z.string().url().optional(),
+
+    // ── Invoice upload ────────────────────────────────────────────────────────
+    INVOICE_FILE_MAX_SIZE: InvoiceFileMaxSizeSchema,
+    METRICS_ENABLED: z.enum(['true', 'false']).default('true'),
+  })
+  // ── Cross-field boundary checks ─────────────────────────────────────────────
+  .superRefine((data, ctx) => {
+    // Skip cross-field checks in test mode to allow partial configurations.
+    if (data.NODE_ENV === 'test') { return; }
+
+    // 1. Production cursor secret: either CURSOR_SECRET or JWT_SECRET must be set.
+    if (data.NODE_ENV === 'production' && !data.CURSOR_SECRET && !data.JWT_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'CURSOR_SECRET or JWT_SECRET must be configured in production.',
+        path: ['CURSOR_SECRET'],
+      });
+    }
+
+    // 2. KYC half-configuration: URL and key must be present together or absent together.
+    const hasUrl = Boolean(data.KYC_PROVIDER_URL);
+    const hasKey = Boolean(data.KYC_PROVIDER_API_KEY);
+    if (hasUrl !== hasKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'KYC_PROVIDER_URL and KYC_PROVIDER_API_KEY must both be set or both be absent.',
+        path: hasUrl ? ['KYC_PROVIDER_API_KEY'] : ['KYC_PROVIDER_URL'],
+      });
+    }
+
+    // 3. Production PUBLIC_API_BASE_URL: required, HTTPS, non-loopback.
+    if (data.NODE_ENV === 'production') {
+      const baseUrl = data.PUBLIC_API_BASE_URL;
+      if (!baseUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'PUBLIC_API_BASE_URL must be set in production. It is used in the OpenAPI spec servers array.',
+          path: ['PUBLIC_API_BASE_URL'],
+        });
+        return;
+      }
+      let parsed;
+      try { parsed = new URL(baseUrl); } catch (_) { parsed = null; }
+
+      if (!parsed || parsed.protocol !== 'https:') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'PUBLIC_API_BASE_URL must use HTTPS in production.',
+          path: ['PUBLIC_API_BASE_URL'],
+        });
+        return;
+      }
+      const loopbackPattern = /^(localhost|127(?:\.\d+){3}|::1|\[::1\])$/i;
+      if (loopbackPattern.test(parsed.hostname)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'PUBLIC_API_BASE_URL must not be a loopback address in production.',
+          path: ['PUBLIC_API_BASE_URL'],
+        });
+      }
+    }
+  });
+
+// ─── Singleton state ───────────────────────────────────────────────────────────
+
+/**
+ * Lifecycle states of the published configuration snapshot.
+ *
+ * - `unvalidated`: no validation attempt has completed yet.
+ * - `validating`: a validation is running; publication is not yet committed.
+ * - `valid`: `snapshot` was published from the most recent environment state.
+ * - `invalid`: the most recent attempt failed; `snapshot` (if any) is stale.
+ *
+ * @readonly
+ * @enum {string}
+ */
+const ValidationState = Object.freeze({
+  UNVALIDATED: 'unvalidated',
+  VALIDATING: 'validating',
+  VALID: 'valid',
+  INVALID: 'invalid',
+});
+
+/**
+ * The published, deeply frozen configuration snapshot. Assigned exactly once
+ * per successful validation, which is the atomic-publication invariant: readers
+ * can never observe a partially constructed config.
+ * @type {z.infer<typeof ConfigSchema>|null}
+ */
+let snapshot = null;
+
+/** Fingerprint of the env snapshot that produced the published `snapshot`. */
+let publishedFingerprint = null;
+
+/** Result of the most recent validation attempt. @type {string} */
+let validationState = ValidationState.UNVALIDATED;
+
+/** Error from the most recent failed attempt, or null. @type {Error|z.ZodError|null} */
+let lastValidationError = null;
+
+/** Single-flight guard: true while a validation is in progress. @type {boolean} */
+let isValidating = false;
+
+/** Number of successful publications. Monotonic; never decreases. @type {number} */
+let generation = 0;
+
+/**
+ * Recursively freezes a value so published configuration can never be mutated
+ * in place by a consumer.
+ * @template T
+ * @param {T} value - Value to freeze.
+ * @returns {T} The same value, deeply frozen.
+ */
+function deepFreeze(value) {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const key of Object.keys(value)) {
+    deepFreeze(value[key]);
+  }
+  return value;
+}
+
+/**
+ * Takes a point-in-time copy of `process.env`.
+ *
+ * Copying first is what makes validation deterministic: every key is read once,
+ * so a concurrent `process.env` mutation (for example the admin config surface
+ * writing `CORS_ALLOWED_ORIGINS`) cannot produce a snapshot that mixes values
+ * from two different environment states.
+ *
+ * @returns {Record<string, string|undefined>} A private env copy.
+ */
+function copyEnv() {
+  return { ...process.env };
+}
+
+/**
+ * Computes an order-independent fingerprint of an environment snapshot.
+ * Used to detect that a repeat `validate()` has no new work to do.
+ * @param {Record<string, string|undefined>} envSnapshot - Env values to hash.
+ * @returns {string} Hex-encoded SHA-256 fingerprint.
+ */
+function fingerprintEnv(envSnapshot) {
+  const hash = crypto.createHash('sha256');
+  for (const key of Object.keys(envSnapshot).sort()) {
+    hash.update(`${key}\u0000${envSnapshot[key]}\u0000`);
+  }
+  return hash.digest('hex');
+}
+
+/** Frozen snapshot of the last successfully validated config. @type {Readonly<z.infer<typeof ConfigSchema>>|null} */
+let frozenConfig = null;
+
+/**
+ * Validates environment variables against schema and returns typed config.
+ *
+ * Safe to call repeatedly and concurrently: see the module-level concurrency
+ * contract. Published snapshots are immutable and returned by identity, so
+ * callers comparing two results can rely on object identity to mean "same
+ * environment, same config".
+ *
+ * @returns {z.infer<typeof ConfigSchema>} Frozen validated config.
+ * @throws {z.ZodError} When the environment fails schema validation.
+ * @throws {Error} With code `CONFIG_VALIDATION_IN_PROGRESS` when called
+ *   re-entrantly before any config has been published.
+ */
+function validate() {
+  // Single flight: never start a competing parse from inside an in-progress
+  // validation. Returning the published snapshot keeps the contract "one
+  // validation per synchronous burst" true and prevents a nested caller from
+  // publishing a divergent view of the environment.
+  if (isValidating) {
+    if (snapshot) {
+      return snapshot;
+    }
+    const inProgressError = new Error(
+      'Config validation is already in progress and no config has been published yet.'
+    );
+    inProgressError.code = 'CONFIG_VALIDATION_IN_PROGRESS';
+    throw inProgressError;
+  }
+
+  // Read the environment exactly once, up front.
+  const envSnapshot = copyEnv();
+  const fingerprint = fingerprintEnv(envSnapshot);
+
+  // Idempotent repeat: identical environment ⇒ identical already-published
+  // snapshot. Avoids duplicate work and generation churn on repeated boot paths.
+  if (
+    snapshot
+    && validationState === ValidationState.VALID
+    && fingerprint === publishedFingerprint
+  ) {
+    return snapshot;
+  }
+
+  isValidating = true;
+  validationState = ValidationState.VALIDATING;
+
+  let parsed;
+  try {
+    parsed = ConfigSchema.safeParse(envSnapshot);
+  } catch (err) {
+    // Defensive: safeParse is not expected to throw. If it does, record the
+    // attempt as invalid so the state machine never gets stuck "validating".
+    validationState = ValidationState.INVALID;
+    lastValidationError = err;
+    throw err;
+  } finally {
+    isValidating = false;
+  }
+
+  if (!parsed.success) {
+    // Fail safe: keep the last known-good snapshot serving and record why, so
+    // the staleness is observable instead of silent. The published snapshot is
+    // never mutated or partially replaced here.
+    validationState = ValidationState.INVALID;
+    lastValidationError = parsed.error;
+    throw parsed.error;
+  }
+
+  const nextSnapshot = deepFreeze(parsed.data);
+  snapshot = nextSnapshot; // Atomic publication: a single fully-built assignment.
+  publishedFingerprint = fingerprint;
+  generation += 1;
+  validationState = ValidationState.VALID;
+  lastValidationError = null;
+  return snapshot;
+}
+
+/**
+ * Returns true when validate() has completed successfully at least once.
+ * @returns {boolean}
+ */
+function isInitialized() {
+  return config !== null && config !== undefined;
+}
+
+/**
+ * Format and log a redacted summary of validation issues to console.error.
+ * Never prints secret values (only key names and validation error messages).
+ *
+ * CONTRACT: this function never throws. It accepts any value including null
+ * and undefined.
+ *
+ * @param {z.ZodError | Error | null | undefined} error - The Zod error to summarize.
+ * @returns {void}
+ */
+function logRedactedSummary(error) {
+  console.error('Configuration validation failed:');
+  // ConfigValidationError exposes .issues as { path, message } pairs.
+  if (error instanceof ConfigValidationError) {
+    error.issues.forEach(issue => {
+      console.error(`- [${issue.path}]: ${issue.message}`);
+    });
+    return;
+  }
+  // Legacy: raw ZodError (e.g. from callers that import ConfigSchema directly).
+  if (error && Array.isArray(error.issues)) {
+    error.issues.forEach(issue => {
+      const key = issue.path.join('.');
+      console.error(`- [${key}]: ${issue.message}`);
+    });
+    return;
+  }
+  console.error(error ? error.message : 'Unknown configuration error');
+}
+
+/**
+ * Getter for validated config. Throws if not validated.
+ * The returned object is deeply frozen and shared; treat it as read-only.
+ * @returns {z.infer<typeof ConfigSchema>} Frozen validated config.
+ * @throws {Error} With code `CONFIG_NOT_VALIDATED` when called before `validate()`.
+ */
+function get() {
+  if (!snapshot) {
+    const notValidatedError = new Error('Config not validated. Call validate() first.');
+    notValidatedError.code = 'CONFIG_NOT_VALIDATED';
+    throw notValidatedError;
+  }
+  return snapshot;
+}
+
+/**
+ * Reset the in-memory config snapshot. Intended for tests only; production
+ * code must not call this because it invalidates the validated contract.
+ * @returns {void}
+ */
+function resetForTests() {
+  config = null;
+  frozenConfig = null;
+}
+
+/**
+ * Returns a value from the validated configuration with key-aware JSDoc types.
+ *
+ * CONTRACT: signature is `(key: keyof Config) => Config[key]`. The key type
+ * will never widen; callers that pass a valid key today will compile without
+ * error after future schema additions.
+ *
+ * @template {keyof z.infer<typeof ConfigSchema>} K
+ * @param {K} key
+ * @returns {z.infer<typeof ConfigSchema>[K]}
+ */
+function getValue(key) {
+  return get()[key];
+}
+
+/**
+ * Reports the validation lifecycle for diagnostics (logs, readiness probes).
+ * Deliberately contains no configuration values, so it is safe to expose.
+ *
+ * `stale` is true when a snapshot is being served even though the most recent
+ * validation attempt failed — callers should alert on it rather than treating
+ * the served config as the result of the latest environment.
+ *
+ * @returns {{state: string, validated: boolean, stale: boolean, generation: number, hasError: boolean}}
+ *   Redaction-safe validation status.
+ */
+function getValidationState() {
+  return {
+    state: validationState,
+    validated: validationState === ValidationState.VALID,
+    stale: snapshot !== null && validationState !== ValidationState.VALID,
+    generation,
+    hasError: lastValidationError !== null,
+  };
+}
+
+/**
+ * Returns the error from the most recent failed validation attempt.
+ * Callers must log it through `logRedactedSummary` to avoid leaking values.
+ * @returns {Error|z.ZodError|null} The last error, or null when the latest
+ *   attempt succeeded or none has run.
+ */
+function getValidationError() {
+  return lastValidationError;
+}
+
+/**
+ * Returns the validated invoice PDF upload limit used when routes are built.
+ *
+ * Deterministic across the validation boundary: before `validate()` runs the
+ * value is derived from an atomic env copy with the same schema (so concurrent
+ * callers cannot disagree), and once validated the frozen snapshot is used.
+ *
+ * @returns {string} Express-compatible request size limit.
+ */
+function getInvoiceFileMaxSize() {
+  if (snapshot) {
+    return snapshot.INVOICE_FILE_MAX_SIZE;
+  }
+  return InvoiceFileMaxSizeSchema.parse(copyEnv().INVOICE_FILE_MAX_SIZE);
+}
+
+// ─── Public API — new contracts (additive, #1306) ─────────────────────────────
+
+/**
+ * Returns the boolean value of a named feature flag from the validated config.
+ *
+ * This is an additive helper that converts the stored string literal
+ * ("true" | "false") to a native boolean, removing the need for callers to
+ * perform string comparison. Existing callers using `getValue(key)` and
+ * comparing against `'true'` continue to work without change.
+ *
+ * CONTRACT:
+ *   - Returns `true`  when the stored value is `"true"`.
+ *   - Returns `false` when the stored value is `"false"`.
+ *   - Throws `TypeError` when `key` is not a recognised feature-flag key, so
+ *     callers get an early error rather than a silent `false`.
+ *   - Throws `Error` if `validate()` has not been called (same as `get()`).
+ *
+ * @param {string} key - One of the keys in FEATURE_FLAG_KEYS.
+ * @returns {boolean}
+ * @throws {TypeError} If `key` is not a valid feature-flag key.
+ * @throws {Error} If `validate()` has not been called yet.
+ */
+function getFeatureFlag(key) {
+  if (!FEATURE_FLAG_KEYS.includes(key)) {
+    throw new TypeError(
+      `"${key}" is not a valid feature-flag key. ` +
+      `Valid keys: ${FEATURE_FLAG_KEYS.join(', ')}.`
+    );
+  }
+  return getValue(key) === 'true';
+}
+
+// ─── Security headers ─────────────────────────────────────────────────────────
+
+const securityHeaders = {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"]
+    }
+  },
+  referrerPolicy: { policy: 'no-referrer' },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  docsContentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"]
+    }
+  }
+};
+
+// ─── Exports ──────────────────────────────────────────────────────────────────
+
+module.exports = {
+  // ── Preserved (initial contract) ─────────────────────────────────────────
+  validate,
+  validateSafe,
+  get,
+  isInitialized,
+  resetForTests,
+  getValue,
+  getValidationState,
+  getValidationError,
+  getInvoiceFileMaxSize,
+  logRedactedSummary,
+  ConfigValidationError,
+  ConfigSchema,
+  InvoiceFileMaxSizeSchema,
+  ValidationState,
+  securityHeaders,
+  // ── New (additive, #1306) ─────────────────────────────────────────────────
+  getFeatureFlag,
+  FEATURE_FLAG_KEYS,
+  CONFIG_VERSION,
+};

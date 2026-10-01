@@ -6,20 +6,6 @@
  * Maps known semver release tags to their expected on-chain SCHEMA_VERSION
  * (a u32 stored in the contract's persistent storage).
  *
- * @invariants (enforced by this module):
- *  1. The registry is immutable at runtime: consumers must not be able to
- *     mutate the known version map and silently change comparison results.
- *  2. Registry entries are validated on load: semver keys must be well
- *     formed and SCHEMA_VERSION values must be positive integers. A malformed
- *     registry fails fast at load time rather than producing nonsense
- *     comparison results.
- *  3. `this version is not a valid on-chain value` is rejected before any
- *     comparison is made.
- *  4. The comparison result is deterministic for equal inputs and does not
- *     depend on object key order.
- *  5. Repeated calls are side-effect free; concurrent calls cannot corrupt
- *     shared state.
- *
  * @module config/escrowVersions
  */
 
@@ -28,27 +14,10 @@ const logger = require('../logger');
 const { isValidStellarContractAddress } = require('../utils/validators');
 
 /**
- * Maximum SCHEMA_VERSION accepted from the chain. Stellar u32 is a 32-bit
- * unsigned integer, but the contract only ever emits small monotonically
- * increasing values. We bound the value to avoid accidentally treating a
- * corrupted/malformed XDR response as a valid version.
- *
- * @type {number}
- */
-const MAX_SCHEMA_VERSION = 2 ** 32 - 1;
-
-/**
- * Semver regex accepting major.minor.patch with optional pre-release/plus
- * build metadata. Keys in the registry must match this form.
- *
- * @type {RegExp}
- */
-const SEMVER_REGEX = /^(0|[0-9]*)\.(0|[0-9]*)\.(0|[0-9]*)(?:-[0-9-A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-
-/**
  * Known LiquifactEscrow deployments: semver -> SCHEMA_VERSION (u32).
  * Add a new entry here whenever a wasm upgrade increments SCHEMA_VERSION.
  *
+ * Runtime updates are unsupported; change this source and redeploy.
  * @type {Readonly<Record<string, number>>}
  */
 const REGISTRY = Object.freeze({
@@ -57,97 +26,59 @@ const REGISTRY = Object.freeze({
   '1.2.0': 3,
 });
 
+const MAX_SCHEMA_VERSION = 0xffffffff;
+
 /**
- * Validates a semver string.
+ * Validates schema versions before classification or alerting.
  *
- * @param {string} version
- * @returns {boolean}
+ * @description Rejects coercible values and enforces the full Stellar u32 domain.
+ * Zero is a valid unregistered version; strings and boxed numbers are not versions.
+ * @param {unknown} value - Untrusted schema version.
+ * @returns {number} The validated primitive integer.
  */
-function isValidSemver(version) {
-  return typeof version === 'string' && SEMVER_REGEX.test(version);
+function validateSchemaVersion(value) {
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > MAX_SCHEMA_VERSION
+  ) {
+    const err = new Error('SCHEMA_VERSION must be an integer between 0 and 4294967295');
+    err.code = 'INVALID_SCHEMA_VERSION';
+    throw err;
+  }
+  return value;
 }
 
 /**
- * Validates an on-chain SCHEMA_VERSION value.
+ * Checks RPC configuration without exposing its contents.
  *
- * Accepts only positive integers within the u32 range. Rejects NaN,
- * Infinity, floats, negative numbers, zero, and out-of-range values.
- *
- * @param {*} value
- * @returns {boolean}
+ * @description Validates RPC configuration before retrying any network request.
+ * @param {unknown} value - Configured RPC URL (never included in diagnostics).
+ * @returns {URL} Parsed HTTP(S) endpoint.
  */
-function isValidSchemaVersion(value) {
-  return (
-    typeof value === 'number' &&
-    Number.isInteger(value) &&
-    Number.isFinite(value) &&
-    value > 0 &&
-    value <= MAX_SCHEMA_VERSION
-  );
-}
-
-/**
- * Validates the registry at load time. Throws a deterministic error if any
- * entry is malformed. This fails fast so a corrupted registry cannot silently
- * produce wrong comparison results at runtime.
- *
- * @param {Record<string, number>} registry
- * @throws {Error}
- */
-function validateRegistry(registry) {
-  if (!registry || typeof registry !== 'object' || Array.isArray(registry)) {
-    throw new Error('Escrow version registry must be a non-null object');
-  }
-
-  const entries = Object.entries(registry);
-  if (entries.length === 0) {
-    throw new Error('Escrow version registry must not be empty');
-  }
-
-  const seenSchemaVersions = new Set();
-  for (const [semver, schemaVersion] of entries) {
-    if (!isValidSemver(semver)) {
-      throw new Error(`Invalid semver key in escrow version registry: ${semver}`);
+function validateRpcUrl(value) {
+  try {
+    if (typeof value !== 'string' || !value || value.trim() !== value) {
+      throw new Error();
     }
-    if (!isValidSchemaVersion(schemaVersion)) {
-      throw new Error(
-        `Invalid SCHEMA_VERSION for ${semver} in escrow version registry: ${schemaVersion}`
-      );
+    const url = new URL(value);
+    if (
+      !['https:', 'http:'].includes(url.protocol) ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.hash
+    ) {
+      throw new Error();
     }
-    if (seenSchemaVersions.has(schemaVersion)) {
-      throw new Error(
-        `Duplicate SCHEMA_VERSION ${schemaVersion} in escrow version registry`
-      );
-    }
-    seenSchemaVersions.add(schemaVersion);
+    return url;
+  } catch (_err) {
+    const err = new Error('Invalid SOROBAN_RPC_URL configuration');
+    err.code = 'INVALID_RPC_URL';
+    throw err;
   }
 }
-
-validateRegistry(REGISTRY);
-
-/**
- * Pre-computed, immutable view of the registry used for comparisons.
- *
- * Sorting by SCHEMA_VERSION and freezing the result ensures that
- * comparisons are deterministic and independent of object key order.
- *
- * @type {ReadonlyArray<{readonly [string, number]}>}
- */
-const SORTED_ENTRIES = Object.freeze(
-  Object.entries(REGISTRY)
-    .map(([semver, schemaVersion]) => Object.freeze([semver, schemaVersion]))
-    .sort((a, b) => a[1] - b[1])
-);
-
-/**
- * The highest known SCHEMA_VERSION and its semver.
- *
- * @type {readonly { semver: string, schemaVersion: number }}
- */
-const MAX_ENTRY = Object.freeze({
-  semver: SORTED_ENTRIES[SORTED_ENTRIES.length - 1][0],
-  schemaVersion: SORTED_ENTRIES[SORTED_ENTRIES.length - 1][1],
-});
 
 /**
  * Validates a Stellar contract address.
@@ -168,13 +99,13 @@ function isValidContractId(contractId) {
  *
  * Rejects with a structured error on RPC failure — never calls process.exit.
  *
- * @param {string} [contractId] - Contract address (C...6 chars). Defaults to
+ * @param {string} [contractId] - Contract address (C…56 chars). Defaults to
  *   `ESCROW_CONTRACT_ID` env var.
  * @returns {Promise<number>} The on-chain SCHEMA_VERSION u32.
- * @throws {{ code: 'INVALID_CONTRACT_ID' | 'RPC_ERROR', message: string }}
+ * @throws {{ code: 'INVALID_CONTRACT_ID'|'RPC_ERROR', message: string }}
  */
 async function getOnChainSchemaVersion(contractId) {
-  const id = contractId || process.env.ESCROW_CONTRACT_ID;
+  const id = contractId === undefined ? process.env.ESCROW_CONTRACT_ID : contractId;
 
   if (!isValidContractId(id)) {
     const err = new Error('Invalid or missing ESCROW_CONTRACT_ID');
@@ -183,97 +114,98 @@ async function getOnChainSchemaVersion(contractId) {
   }
 
   try {
-    /**
-     * Read the persistent `SCHEMA_VERSION` Symbol key from the contract.
-     *
-     * The Stellar SDK's `SorobanRpc.Server.getContractData` accepts:
-     *   - contract: the StrKey-encoded contract address
-     *   - key:      an ScVal identifying the storage key
-     *   - durability: 'persistent' | 'temporary'
-     *
-     * It resolves to an `LedgerEntryResult` whose `.val` is the raw ScVal.
-     * We decode it with `.u32()` since SCHEMA_VERSION is always a u32.
-     *
-     * @returns {Promise<number>}
-     */
+    const rpcUrl = validateRpcUrl(process.env.SOROBAN_RPC_URL);
     const version = await callSorobanContract(async () => {
-      const { SorobanRpc, xdr, Contract } = require('@stellar/stellar-sdk');
-      const rpcUrl = process.env.SOROBAN_RPC_URL;
-      const server = new SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') });
+      const { xdr, Address } = require('@stellar/stellar-sdk');
+      const { Server } = require('@stellar/stellar-sdk/rpc');
+      const server = new Server(rpcUrl.href, { allowHttp: rpcUrl.protocol === 'http:' });
       const key = xdr.ScVal.scvSymbol('SCHEMA_VERSION');
-      const contract = new Contract(id);
+      const contract = new Address(id).toScAddress();
       const ledgerKey = xdr.LedgerKey.contractData(
         new xdr.LedgerKeyContractData({
-          contract: contract.address().toScAddress(),
+          contract,
           key,
           durability: xdr.ContractDataDurability.persistent(),
-        })
+        }),
       );
       const response = await server.getLedgerEntries(ledgerKey);
-      if (!response.entries || response.entries.length === 0) {
-        throw new Error('SCHEMA_VERSION not found in contract persistent storage');
+      try {
+        // A one-key request must produce one persistent contract-data u32 entry.
+        if (!response || !Array.isArray(response.entries) || response.entries.length !== 1) {
+          throw new Error();
+        }
+        const data = response.entries[0].val.contractData();
+        if (
+          data.contract().toXDR('base64') !== contract.toXDR('base64') ||
+          data.key().toXDR('base64') !== key.toXDR('base64') ||
+          data.durability().name !== 'persistent'
+        ) {
+          throw new Error();
+        }
+        const scVal = data.val();
+        if (scVal.switch().name !== 'scvU32') {
+          throw new Error();
+        }
+        return validateSchemaVersion(scVal.u32());
+      } catch (_err) {
+        const err = new Error('Invalid or missing SCHEMA_VERSION ledger entry');
+        err.code = 'INVALID_RPC_RESPONSE';
+        throw err;
       }
-      const raw = response.entries[0].val.contractData().val().u32();
-      if (!isValidSchemaVersion(raw)) {
-        throw new Error(`Invalid on-chain SCHEMA_VERSION: ${raw}`);
-      }
-      return raw;
     });
-    return version;
+    // Also validate wrapper output; no malformed version can reach comparison/alerts.
+    return validateSchemaVersion(version);
   } catch (err) {
-    logger.error({ contractId: id, err: err.message }, 'Failed to read on-chain SCHEMA_VERSION');
-    const rpcErr = new Error(`RPC read failed: ${err.message}`);
+    const reason = ['INVALID_RPC_URL', 'INVALID_RPC_RESPONSE', 'INVALID_SCHEMA_VERSION'].includes(
+      err?.code,
+    )
+      ? err.code
+      : 'UPSTREAM_FAILURE';
+    // SDK errors may contain credentials, URLs or response bodies. Log bounded codes only.
+    logger.error({ contractId: id, reason }, 'Failed to read on-chain SCHEMA_VERSION');
+    const rpcErr = new Error('Soroban RPC schema version read failed');
     rpcErr.code = 'RPC_ERROR';
     throw rpcErr;
   }
 }
 
 /**
- * Compares an on-chain SCHEMA_VERSION against the registry.
+ * Classifies a validated on-chain version against known releases.
  *
- * The comparison is deterministic and independent of object key order.
- * Invalid inputs (NaN, floats, negative, zero, out-of-range) are rejected
- * with a structured error rather than producing a misleading status.
+ * @description Compares a primitive u32 SCHEMA_VERSION against the immutable registry.
+ * @throws {Error} INVALID_SCHEMA_VERSION for non-integers or values outside u32.
  *
  * @param {number} onChainVersion - Value returned by getOnChainSchemaVersion.
- * @returns {{ status: 'current'|'ancient'|'ahead'|'unknown', knownVersion: string|null }}
+ * @returns {{ status: 'current'|'ahead'|'unknown', knownVersion: string|null }}
  *   - `current`  — matches the highest registry entry.
- *   - `ancient`  — matches a known but not highest registry entry.
  *   - `ahead`    — higher than every registry entry; refresh required.
- *   - `unknown`   — not found in registry and not higher than any entry.
- * @throws {{code: 'INVALID_SCHEMA_VERSION', message: string}}
+ *   - `unknown`  — not found in registry and not higher than any entry.
  */
 function compareVersions(onChainVersion) {
-  if (!isValidSchemaVersion(onChainVersion)) {
-    const err = new Error(`Invalid on-chain SCHEMA_VERSION: ${onChainVersion}`);
-    err.code = 'INVALID_SCHEMA_VERSION';
-    throw err;
+  validateSchemaVersion(onChainVersion);
+  const entries = Object.entries(REGISTRY); // [semver, schemaVersion]
+
+  // Find the registry entry with the highest SCHEMA_VERSION.
+  const maxEntry = entries.reduce((best, cur) => (cur[1] > best[1] ? cur : best));
+  const maxSchemaVersion = maxEntry[1];
+  const maxSemver = maxEntry[0];
+
+  if (onChainVersion === maxSchemaVersion) {
+    return { status: 'current', knownVersion: maxSemver };
   }
 
-  if (onChainVersion === MAX_ENTRY.schemaVersion) {
-    return { status: 'current', knownVersion: MAX_ENTRY.semver };
+  if (onChainVersion > maxSchemaVersion) {
+    return { status: 'ahead', knownVersion: maxSemver };
   }
 
-  if (onChainVersion > MAX_ENTRY.schemaVersion) {
-    return { status: 'ahead', knownVersion: MAX_ENTRY.semver };
-  }
-
-  // Find the highest known entry whose SCHEMA_VERSION is <= the on-chain value.
-  // Because SORTED_ENTRIES is ascending, the last match is the best match.
-  const match = SORTED_ENTRIES.find(([, v]) => v === onChainVersion);
-  if (match) {
-    return { status: 'ancient', knownVersion: match[0] };
-  }
-
-  return { status: 'unknown', knownVersion: null };
+  // Check if it matches any lower entry.
+  const match = entries.find(([, v]) => v === onChainVersion);
+  return { status: 'unknown', knownVersion: match ? match[0] : null };
 }
 
 module.exports = {
   REGISTRY,
-  MAX_SCHEMA_VERSION,
   getOnChainSchemaVersion,
   compareVersions,
- isValidContractId,
-  isValidSemver,
-  isValidSchemaVersion,
+  isValidContractId,
 };

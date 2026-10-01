@@ -32,61 +32,21 @@
  */
 
 /**
- * Validate the environment parameter.
+ * Normalise an environment name into a stable lookup key.
  *
- * @param {unknown} environment - The environment value to validate.
- * @throws {Error} If environment is invalid.
+ * The key is trimmed and lowercased so that callers passing
+ * `"production "`, `"PRODUCTION"`, or `undefined` get deterministic
+ * behaviour. Non-string inputs are treated as an empty string so the
+ * default development block is selected instead of throwing a TypeError.
+ *
+ * @param {*} environment - Raw NODE_ENV value.
+ * @returns {string} Normalised lookup key.
  */
-function validateEnvironment(environment) {
+function normaliseEnvironment(environment) {
   if (typeof environment !== 'string') {
-    throw new Error(
-      '[db] NODE_ENV must be a string. Received: ' + typeof environment
-    );
+    return '';
   }
-
-  if (environment.trim() === '') {
-    throw new Error('[db] NODE_ENV cannot be empty or whitespace-only.');
-  }
-
-  if (environment.length > 100) {
-    throw new Error(
-      '[db] NODE_ENV exceeds maximum length of 100 characters.'
-    );
-  }
-
-  // Allow only alphanumeric, underscore, and hyphen to prevent injection or parsing issues
-  if (!/^[a-zA-Z0-9_-]+$/.test(environment)) {
-    throw new Error(
-      '[db] NODE_ENV contains invalid characters. Only alphanumeric, underscore, and hyphen are allowed.'
-    );
-  }
-}
-
-/**
- * Validate the returned config structure.
- *
- * @param {unknown} config - The config object to validate.
- * @param {string} environment - The environment name for error messages.
- * @throws {Error} If config structure is invalid.
- */
-function validateConfigStructure(config, environment) {
-  if (!config || typeof config !== 'object') {
-    throw new Error(
-      `[db] Config for NODE_ENV="${environment}" is not a valid object.`
-    );
-  }
-
-  if (!config.client) {
-    throw new Error(
-      `[db] Config for NODE_ENV="${environment}" is missing required "client" field.`
-    );
-  }
-
-  if (!config.connection) {
-    throw new Error(
-      `[db] Config for NODE_ENV="${environment}" is missing required "connection" field.`
-    );
-  }
+  return environment.trim().toLowerCase();
 }
 
 /**
@@ -110,6 +70,7 @@ function resolveConfig(environment) {
   validateEnvironment(environment);
 
   const allConfigs = require('../../knexfile');
+  const key = normaliseEnvironment(environment);
 
   // ------------------------------------------------------------------
   // test — fully isolated, no fallback permitted (CONTRACT 2, 3, 16)
@@ -117,12 +78,15 @@ function resolveConfig(environment) {
   if (environment === 'test') {
     const testConfig = allConfigs.test;
     if (!testConfig) {
-      throw new Error(
+      const err = configError(
+        ERROR_CODES.MISSING_TEST_CONFIG,
         '[db] No "test" config block found in knexfile.js. ' +
           'The test environment must use an isolated database configuration ' +
           '(better-sqlite3 :memory:). Falling back to development or ' +
           'production config in tests is not permitted.'
       );
+      logFailure(err, normalized);
+      throw err;
     }
     validateConfigStructure(testConfig, environment);
     return testConfig;
@@ -140,6 +104,8 @@ function resolveConfig(environment) {
           'The application cannot start without a valid PostgreSQL connection string. ' +
           'Never fall back to a SQLite database in production.'
       );
+      logFailure(err, normalized);
+      throw err;
     }
 
     const prodConfig = allConfigs.production;
@@ -165,11 +131,15 @@ function resolveConfig(environment) {
         'and no "development" fallback block exists. ' +
         `Add a "${environment}" or "development" block to knexfile.js.`
     );
+    logFailure(err, normalized);
+    throw err;
   }
 
   return envConfig;
   validateConfigStructure(devConfig, environment);
   return devConfig;
 }
+
+resolveConfig.normaliseEnvironment = normaliseEnvironment;
 
 module.exports = resolveConfig;

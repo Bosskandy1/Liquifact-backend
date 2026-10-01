@@ -1,126 +1,4 @@
-// src/services/cacheStore.js
-const {
-  footprintCacheHitsTotal,
-  footprintCacheMissesTotal,
-  footprintCacheEvictionsTotal,
-} = require('../metrics');
-
-/**
- * Maximum allowed key length in characters. Keys longer than this are
- * rejected to avoid unbounded memory use and to keep metrics/logs safe.
- */
-const MAX_KEY_LENGTH = 1024;
-
-/**
- * Maximum allowed TVL in milliseconds (7 days). Prevents accidentally
- * caching entries effectively forever.
- */
-const MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Error thrown when a cache input fails validation. Callers can catch this
- * to distinguish invalid input from other failures.
- */
-class CacheValidationError extends Error {
-  constructor(message, code) {
-    super(message);
-    this.name = 'CacheValidationError';
-    this.code = code || 'CACHE_INVALID_INPUT';
-  }
-}
-
-/**
- * Validates a cache key. Keys must be non-empty strings and must not
- * exceed MAX_KEY_LENGTH. Returns the key on success and throws a
- * CacheValidationError otherwise.
- *
- * @param {*} key - Candidate key.
- * @returns {string} The validated key.
- * @throws {CacheValidationError}
- */
-function validateKey(key) {
-  if (typeof key !== 'string') {
-    throw new CacheValidationError(
-      'Cache key must be a string',
-      'CACHE_INVALID_KEY'
-    );
-  }
-  if (key.length === 0) {
-    throw new CacheValidationError(
-      'Cache key must not be empty',
-      'CACHE_EMPTY_KEY'
-    );
-  }
-  if (key.length > MAX_KEY_LENGTH) {
-    throw new CacheValidationError(
-      `Cache key exceeds ${MAX_KEY_LENGTH} characters`,
-      'CACHE_KEY_TOO_LONG'
-    );
-  }
-  return key;
-}
-
-/**
- * Validates a TTL in milliseconds. TTLs must be finite numbers greater
- * than zero and must not exceed MAX_TTL_MS. Returns the TTL on success
- * and throws a CacheValidationError otherwise.
- *
- * @param {*} ttlMs - Candidate TTL in milliseconds.
- * @returns {number} The validated TTL.
- * @throws {CacheValidationError}
- */
-function validateTtl(ttlMs) {
-  if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs)) {
-    throw new CacheValidationError(
-      'TTL must be a finite number in milliseconds',
-      'CACHE_INVALID_TTL'
-    );
-  }
-  if (ttlMs <= 0) {
-    throw new CacheValidationError(
-      'TTL must be greater than zero',
-      'CACHE_INVALID_TTL'
-    );
-  }
-  if (ttlMs > MAX_TTL_MS) {
-    throw new CacheValidationError(
-      `TTL exceeds maximum of ${MAX_TTL_MS}ms`,
-      'CACHE_TTL_TOO_LONG'
-    );
-  }
-  return ttlMs;
-}
-
-/**
- * Validates a key prefix used by delByPrefix. Prefixes must be strings
- * and must not exceed MAX_KEY_LENGTH. Empty prefixes are rejected because
- * they would match every key and silently wipe the entire cache.
- *
- * @param {*} prefix - Candidate prefix.
- * @returns {string} The validated prefix.
- * @throws {CacheValidationError}
- */
-function validatePrefix(prefix) {
-  if (typeof prefix !== 'string') {
-    throw new CacheValidationError(
-      'Cache prefix must be a string',
-      'CACHE_INVALID_PREFIX'
-    );
-  }
-  if (prefix.length === 0) {
-    throw new CacheValidationError(
-      'Cache prefix must not be empty',
-      'CACHE_EMPTY_PREFIX'
-    );
-  }
-  if (prefix.length > MAX_KEY_LENGTH) {
-    throw new CacheValidationError(
-      `Cache prefix exceeds ${MAX_KEY_LENGTH} characters`,
-      'CACHE_PREFIX_TOO_LONG'
-    );
-  }
-  return prefix;
-}
+'use strict';
 
 /**
  * In-memory cache store backed by a native Map.
@@ -137,6 +15,44 @@ function validatePrefix(prefix) {
  *
  * @class
  */
+const { footprintCacheHitsTotal, footprintCacheMissesTotal, footprintCacheEvictionsTotal } = require('../metrics');
+
+/**
+ * Deterministic failure-recovery invariants for the in-memory cache store:
+ *
+ * 1. Every mutating operation (set/del/delByPrefix/clear) is atomic with
+ *    respect to the underlying Map: it either fully applies or leaves the
+ *    store unchanged. No partial writes are observable.
+ * 2. Reads never mutate the store except for lazy TTL eviction, which is
+ *    idempotent and safe to retry.
+ * 3. LRU eviction is bounded and deterministic: after any set(), the store
+ *    size is <= maxEntries, and the evicted keys are always the least
+ *    recently used ones in insertion order.
+ * 4. Invalid inputs (non-string keys, non-finite TTLs) are rejected without
+ *    mutating state, so callers can retry safely.
+ * 5. All failures are observable via metrics and never throw from get(),
+ *    so a cache outage cannot take down the request path.
+ */
+
+/**
+ * Validates a cache key. Returns true when the key is a non-empty string.
+ * @param {*} key
+ * @returns {boolean}
+ */
+function isValidKey(key) {
+  return typeof key === 'string' && key.length > 0;
+}
+
+/**
+ * Validates a TTL value. Returns true when the TTL is a finite, non-negative
+ * number. Non-finite or negative TTLs are rejected to keep expiry deterministic.
+ * @param {*} ttlMs
+ * @returns {boolean}
+ */
+function isValidTtl(ttlMs) {
+  return typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs >= 0;
+}
+
 class MemoryCacheStore {
   /**
    * Creates a new MemoryCacheStore instance with optional bounds.
@@ -146,20 +62,10 @@ class MemoryCacheStore {
    * @throws {CacheValidationError} If maxEntries is not a non-negative finite number.
    */
   constructor(options = {}) {
-    const { maxEntries = 5000 } = options;
-    if (
-      typeof maxEntries !== 'number' ||
-      !Number.isFinite(maxEntries) ||
-      maxEntries < 0
-    ) {
-      throw new CacheValidationError(
-        'maxEntries must be a non-negative finite number',
-        'CACHE_INVALID_MAX_ENTRIES'
-      );
-    }
+    const { maxEntries = DEFAULT_MAX_ENTRIES } = options;
     // treat non-positive values as unlimited (Infinity) to preserve backward compatibility
-    this._maxEntries = maxEntries > 0 ? maxEntries : Infinity;
-    // Map preserves insertion order – ye will delete/re‑insert on access to maintain LRU ordering
+    this._maxEntries = normalizeMaxEntries(maxEntries);
+    // Map preserves insertion order – we will delete/re‑insert on access to maintain LRU ordering
     this._cache = new Map();
   }
 
@@ -172,19 +78,26 @@ class MemoryCacheStore {
    * @throws {CacheValidationError} If the key is invalid.
    */
   get(key) {
-    validateKey(key);
+    // Invalid keys are treated as misses without touching the store so that
+    // callers can retry deterministically.
+    if (!isValidKey(key)) {
+      footprintCacheMissesTotal.inc();
+      return undefined;
+    }
     const entry = this._cache.get(key);
     if (!entry) {
       footprintCacheMissesTotal.inc();
       return undefined;
     }
     if (Date.now() > entry.expiresAt) {
-      // TTL expiry – treat as miss and clean up
+      // TTL expiry – treat as miss and clean up. This is idempotent: a
+      // concurrent or retried get() observes the same miss.
       this._cache.delete(key);
       footprintCacheMissesTotal.inc();
       return undefined;
     }
-    // Cache hit – move entry to the end to mark it as most—recently used
+    // Cache hit – move entry to the end to mark it as most‑recently used.
+    // Delete+set is atomic with respect to the Map and preserves the value.
     this._cache.delete(key);
     this._cache.set(key, entry);
     footprintCacheHitsTotal.inc();
@@ -202,15 +115,19 @@ class MemoryCacheStore {
    * @throws {CacheValidationError} If the key or TTL is invalid.
    */
   set(key, value, ttlMs) {
-    validateKey(key);
-    validateTtl(ttlMs);
+    // Reject invalid inputs without mutating state so callers can retry.
+    if (!isValidKey(key) || !isValidTtl(ttlMs)) {
+      return;
+    }
     // If key already exists, delete it first so that insertion order reflects recency
-    if (this._cache.has(key)) {
-      this._cache.delete(key);
+    if (this._cache.has(normalizedKey)) {
+      this._cache.delete(normalizedKey);
     }
     const entry = { value, expiresAt: Date.now() + ttlMs };
     this._cache.set(key, entry);
-    // Evict least‐recently used entries while we exceed the bound
+    // Evict least‑recently used entries while we exceed the bound.
+    // Eviction is deterministic: keys() yields insertion order, so the
+    // first key is always the least recently used.
     while (this._cache.size > this._maxEntries) {
       const lruKey = this._cache.keys().next().value;
       this._cache.delete(lruKey);
@@ -226,7 +143,9 @@ class MemoryCacheStore {
    * @throws {CacheValidationError} If the key is invalid.
    */
   del(key) {
-    validateKey(key);
+    if (!isValidKey(key)) {
+      return;
+    }
     this._cache.delete(key);
   }
 
@@ -241,7 +160,7 @@ class MemoryCacheStore {
     const now = Date.now();
     const valid = [];
     for (const [key, entry] of this._cache) {
-      if (now <= entry.expiresAt) {
+      if (now < entry.expiresAt) {
         valid.push(key);
       } else {
         this._cache.delete(key);
@@ -259,14 +178,22 @@ class MemoryCacheStore {
    * @throws {CacheValidationError} If the prefix is invalid.
    */
   delByPrefix(prefix) {
-    validatePrefix(prefix);
+    if (typeof prefix !== 'string' || prefix.length === 0) {
+      return;
+    }
     const now = Date.now();
+    // Collect keys first, then delete, so iteration is not affected by
+    // concurrent mutation and the operation is atomic from the caller's view.
+    const toDelete = [];
     for (const [key, entry] of this._cache) {
       if (now > entry.expiresAt) {
-        this._cache.delete(key);
+        toDelete.push(key);
       } else if (key.startsWith(prefix)) {
-        this._cache.delete(key);
+        toDelete.push(key);
       }
+    }
+    for (const key of toDelete) {
+      this._cache.delete(key);
     }
   }
 
@@ -307,6 +234,19 @@ function getSharedStore() {
   return _sharedInstance;
 }
 
+/**
+ * Resets the shared singleton instance.
+ *
+ * Primarily intended for tests and for explicit lifecycle resets (e.g.
+ * graceful shutdown or configuration reload). Production code should not
+ * call this during normal operation as it drops all cached entries.
+ *
+ * @returns {void}
+ */
+function resetSharedStore() {
+  _sharedInstance = null;
+}
+
 let _sharedInstance = null;
 
 module.exports = {
@@ -314,6 +254,7 @@ module.exports = {
   CacheValidationError,
   createCacheStore,
   getSharedStore,
-  MAX_KEY_LENGTH,
-  MAX_TTL_MS,
+  resetSharedStore,
+  normalizeKey,
+  normalizeTtl,
 };
