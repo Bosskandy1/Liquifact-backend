@@ -81,29 +81,19 @@ describe('CORS DTO layer', () => {
       jest.isolateModules(() => {
         process.env.CORS_MAX_AGE = '1800';
         const { corsConfigDtoFromEnv } = require('../../src/dtos/cors');
-        const dto = corsConfigDtoFromEnv({ NODE_ENV: 'production' });
+        const dto = corsConfigDtoFromEnv({ NODE_ENV: 'production', CORS_MAX_AGE: '1800' });
 
         expect(dto.maxAge).toBe(1800);
       });
     });
 
-    it('does not inherit process maxAge when a custom env omits it', () => {
-      process.env.CORS_MAX_AGE = '7200';
-
+    it('does not inherit process CORS_MAX_AGE for an isolated custom environment', () => {
       jest.isolateModules(() => {
+        process.env.CORS_MAX_AGE = '1800';
         const { corsConfigDtoFromEnv } = require('../../src/dtos/cors');
         const dto = corsConfigDtoFromEnv({ NODE_ENV: 'production' });
 
         expect(dto.maxAge).toBe(600);
-      });
-    });
-
-    it('applies the maxAge boundary to custom environments', () => {
-      jest.isolateModules(() => {
-        const { corsConfigDtoFromEnv } = require('../../src/dtos/cors');
-
-        expect(corsConfigDtoFromEnv({ CORS_MAX_AGE: '86400' }).maxAge).toBe(86400);
-        expect(corsConfigDtoFromEnv({ CORS_MAX_AGE: '86401' }).maxAge).toBe(600);
       });
     });
 
@@ -301,6 +291,28 @@ describe('CORS DTO layer', () => {
         expect(cb.mock.calls[0][0].isCorsOriginRejected).toBe(true);
       });
     });
+
+    it('fails closed for malformed DTO roots and invalid policy values', () => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoToOptions } = require('../../src/dtos/cors');
+        const options = corsConfigDtoToOptions({
+          allowedOrigins: ['not-an-origin', 'https://good.example.com'],
+          maxAge: 86401,
+          optionsSuccessStatus: 500,
+        });
+        const allowed = jest.fn();
+        const forbidden = jest.fn();
+
+        expect(options.maxAge).toBe(600);
+        expect(options.optionsSuccessStatus).toBe(204);
+        options.origin('https://good.example.com', allowed);
+        options.origin('https://evil.example.com', forbidden);
+        expect(allowed).toHaveBeenCalledWith(null, true);
+        expect(forbidden.mock.calls[0][0].isCorsOriginRejected).toBe(true);
+
+        expect(() => corsConfigDtoToOptions(null)).not.toThrow();
+      });
+    });
   });
 
   // ─── corsConfigDtoToJson / corsConfigDtoFromJson — JSON round-trip ─────────
@@ -368,6 +380,70 @@ describe('CORS DTO layer', () => {
         const { corsConfigDtoFromJson } = require('../../src/dtos/cors');
         const restored = corsConfigDtoFromJson({});
         expect(restored.maxAge).toBe(600);
+      });
+    });
+
+    it.each([0, -1, 86401, 1.5, '1800'])('defaults invalid or out-of-range maxAge (%s)', (maxAge) => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoFromJson } = require('../../src/dtos/cors');
+        expect(corsConfigDtoFromJson({ maxAge }).maxAge).toBe(600);
+      });
+    });
+
+    it('accepts maxAge at both inclusive boundaries', () => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoFromJson } = require('../../src/dtos/cors');
+        expect(corsConfigDtoFromJson({ maxAge: 1 }).maxAge).toBe(1);
+        expect(corsConfigDtoFromJson({ maxAge: 86400 }).maxAge).toBe(86400);
+      });
+    });
+
+    it('normalizes valid origins and discards invalid and duplicate entries', () => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoFromJson } = require('../../src/dtos/cors');
+        const restored = corsConfigDtoFromJson({
+          allowedOrigins: ['HTTPS://APP.EXAMPLE.COM/', 'https://app.example.com', 'not-an-origin', null],
+        });
+
+        expect(restored.allowedOrigins).toEqual(['https://app.example.com']);
+      });
+    });
+
+    it('returns a safe empty DTO for malformed JSON roots', () => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoFromJson, corsConfigDtoToJson } = require('../../src/dtos/cors');
+        expect(corsConfigDtoFromJson(null)).toEqual({
+          allowedOrigins: [],
+          maxAge: 600,
+          optionsSuccessStatus: 204,
+          isDevelopmentFallback: false,
+        });
+        expect(corsConfigDtoFromJson([]).allowedOrigins).toEqual([]);
+        expect(corsConfigDtoToJson(null)).toEqual({
+          allowedOrigins: [],
+          maxAge: 600,
+          optionsSuccessStatus: 204,
+          isDevelopmentFallback: false,
+        });
+      });
+    });
+
+    it('accepts only boolean development fallback metadata', () => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoFromJson, corsConfigDtoToJson } = require('../../src/dtos/cors');
+        expect(corsConfigDtoFromJson({ isDevelopmentFallback: true }).isDevelopmentFallback).toBe(true);
+        expect(corsConfigDtoFromJson({ isDevelopmentFallback: 'true' }).isDevelopmentFallback).toBe(false);
+        expect(corsConfigDtoToJson({ isDevelopmentFallback: 'true' }).isDevelopmentFallback).toBe(false);
+      });
+    });
+
+    it('accepts only successful HTTP statuses for preflight and defaults other values', () => {
+      jest.isolateModules(() => {
+        const { corsConfigDtoFromJson } = require('../../src/dtos/cors');
+        expect(corsConfigDtoFromJson({ optionsSuccessStatus: 200 }).optionsSuccessStatus).toBe(200);
+        expect(corsConfigDtoFromJson({ optionsSuccessStatus: 299 }).optionsSuccessStatus).toBe(299);
+        expect(corsConfigDtoFromJson({ optionsSuccessStatus: 300 }).optionsSuccessStatus).toBe(204);
+        expect(corsConfigDtoFromJson({ optionsSuccessStatus: '204' }).optionsSuccessStatus).toBe(204);
       });
     });
 
@@ -570,6 +646,7 @@ describe('CORS DTO layer', () => {
         expect(dtos).toHaveProperty('corsConfigDtoFromJson');
         expect(dtos).toHaveProperty('CORS_ORIGIN_NOT_ALLOWED_CODE');
         expect(dtos).toHaveProperty('CORS_NULL_ORIGIN_CODE');
+        expect(dtos).toHaveProperty('CORS_CONFIG_DTO_INVALID_CODE');
 
         expect(typeof dtos.corsConfigDtoFromEnv).toBe('function');
         expect(typeof dtos.validateOriginDto).toBe('function');

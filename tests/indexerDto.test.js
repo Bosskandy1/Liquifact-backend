@@ -82,10 +82,9 @@ describe('mapQueryToDTO()', () => {
     expect(dto.filters.contractId).toBe('CADDR123');
   });
 
-  test('coerces all filter values to strings', () => {
-    const dto = mapQueryToDTO({ filters: { invoiceId: 42, eventType: true } });
-    expect(dto.filters.invoiceId).toBe('42');
-    expect(dto.filters.eventType).toBe('true');
+  test('rejects filter values that were not validated as strings', () => {
+    expect(() => mapQueryToDTO({ filters: { invoiceId: 42 } })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ filters: { eventType: true } })).toThrow(TypeError);
   });
 
   test('omits filter fields that are undefined', () => {
@@ -101,9 +100,10 @@ describe('mapQueryToDTO()', () => {
     expect(dto.sorting.order).toBe('asc');
   });
 
-  test('defaults unknown order value to desc', () => {
-    const dto = mapQueryToDTO({ sorting: { order: 'sideways' } });
-    expect(dto.sorting.order).toBe('desc');
+  test('rejects unsupported sort fields and order values', () => {
+    expect(() => mapQueryToDTO({ sorting: { sortBy: 'unknown' } })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ sorting: { order: 'sideways' } })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ sorting: { sortBy: '' } })).toThrow(TypeError);
   });
 
   test('passes through cursor, page, and limit', () => {
@@ -113,6 +113,20 @@ describe('mapQueryToDTO()', () => {
     expect(dto.pagination.cursor).toBe('tok123');
     expect(dto.pagination.page).toBe(2);
     expect(dto.pagination.limit).toBe(50);
+  });
+
+  test('enforces pagination integer boundaries', () => {
+    expect(() => mapQueryToDTO({ pagination: { page: 0 } })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ pagination: { page: 1.5 } })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ pagination: { limit: 0 } })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ pagination: { limit: 101 } })).toThrow(TypeError);
+    expect(mapQueryToDTO({ pagination: { page: 1, limit: 100 } }).pagination.limit).toBe(100);
+  });
+
+  test('rejects malformed query structures and unknown fields', () => {
+    expect(() => mapQueryToDTO(null)).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ filters: [] })).toThrow(TypeError);
+    expect(() => mapQueryToDTO({ pagination: { unexpected: true } })).toThrow(TypeError);
   });
 
   test('omits pagination fields that are undefined', () => {
@@ -205,6 +219,12 @@ describe('mapRowToEscrowEventDTO()', () => {
     expect(dto.txHash).toBe('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
   });
 
+  test('rejects missing required row fields and invalid boundary values', () => {
+    expect(() => mapRowToEscrowEventDTO({})).toThrow(TypeError);
+    expect(() => mapRowToEscrowEventDTO(makeRow({ ledger_sequence: NaN }))).toThrow(TypeError);
+    expect(() => mapRowToEscrowEventDTO(makeRow({ observed_at: 'not-a-date' }))).toThrow(TypeError);
+  });
+
   test('converts Date instances to ISO-8601 strings', () => {
     const dto = mapRowToEscrowEventDTO(makeRow());
     expect(dto.observedAt).toBe('2026-01-01T00:00:00.000Z');
@@ -231,19 +251,21 @@ describe('mapRowToEscrowEventDTO()', () => {
     expect(dto.txHash).toBeNull();
   });
 
-  test('maps undefined nullable fields to null', () => {
+  test('maps undefined nullable text fields to null', () => {
     const dto = mapRowToEscrowEventDTO(makeRow({
       paging_token: undefined,
       contract_id: undefined,
       tx_hash: undefined,
-      observed_at: undefined,
       created_at: undefined,
     }));
     expect(dto.pagingToken).toBeNull();
     expect(dto.contractId).toBeNull();
     expect(dto.txHash).toBeNull();
-    expect(dto.observedAt).toBeNull();
     expect(dto.createdAt).toBeNull();
+  });
+
+  test('rejects a missing required observed_at timestamp', () => {
+    expect(() => mapRowToEscrowEventDTO(makeRow({ observed_at: undefined }))).toThrow(TypeError);
   });
 
   test('coerces numeric ledger_sequence to number', () => {
@@ -339,7 +361,7 @@ describe('mapMetaToDTO()', () => {
 
   test('maps offset-mode meta (includes page and totalPages)', () => {
     const meta = mapMetaToDTO({
-      total: 100, limit: 10, hasMore: true, nextCursor: null, page: 2, totalPages: 10,
+      total: 100, limit: 10, hasMore: true, nextCursor: 'next-cursor', page: 2, totalPages: 10,
     });
     expect(meta.page).toBe(2);
     expect(meta.totalPages).toBe(10);
@@ -355,16 +377,18 @@ describe('mapMetaToDTO()', () => {
     expect(meta.nextCursor).toBeNull();
   });
 
-  test('coerces string total/limit to numbers', () => {
-    const meta = mapMetaToDTO({ total: '55', limit: '10', hasMore: '0', nextCursor: null });
-    expect(typeof meta.total).toBe('number');
-    expect(typeof meta.limit).toBe('number');
-    expect(typeof meta.hasMore).toBe('boolean');
+  test('accepts integer strings for database counts and requires a boolean hasMore', () => {
+    const meta = mapMetaToDTO({ total: '55', limit: '10', hasMore: false, nextCursor: null });
+    expect(meta.total).toBe(55);
+    expect(meta.limit).toBe(10);
   });
 
-  test('hasMore coercion: truthy string → true', () => {
-    const meta = mapMetaToDTO({ total: 0, limit: 10, hasMore: 'yes', nextCursor: null });
-    expect(meta.hasMore).toBe(true);
+  test('rejects invalid booleans, counts, and inconsistent pagination metadata', () => {
+    expect(() => mapMetaToDTO({ total: 0, limit: 10, hasMore: 'yes', nextCursor: null })).toThrow(TypeError);
+    expect(() => mapMetaToDTO({ total: -1, limit: 10, hasMore: false, nextCursor: null })).toThrow(TypeError);
+    expect(() => mapMetaToDTO({ total: 1, limit: 10, hasMore: false, nextCursor: null, page: 1 })).toThrow(TypeError);
+    expect(() => mapMetaToDTO({ total: 11, limit: 10, hasMore: false, nextCursor: null, page: 1, totalPages: 1 })).toThrow(TypeError);
+    expect(() => mapMetaToDTO({ total: 11, limit: 10, hasMore: true, nextCursor: null })).toThrow(TypeError);
   });
 
   test('returned DTO is frozen', () => {
@@ -432,6 +456,24 @@ describe('mapServiceResultToResponseDTO()', () => {
     });
     expect(dto.meta.nextCursor).toBe('cursor-abc');
   });
+
+  test('rejects invalid response envelopes and duplicate event IDs', () => {
+    expect(() => mapServiceResultToResponseDTO({ data: {}, meta: {} })).toThrow(TypeError);
+    expect(() => mapServiceResultToResponseDTO({ data: [], meta: {}, unexpected: true })).toThrow(TypeError);
+    expect(() => mapServiceResultToResponseDTO({
+      data: [makeRow({ event_id: 'duplicate' }), makeRow({ event_id: 'duplicate' })],
+      meta: { total: 2, limit: 20, hasMore: false, nextCursor: null },
+    })).toThrow(TypeError);
+  });
+
+  test('accepts and omits the service correlationId field', () => {
+    const dto = mapServiceResultToResponseDTO({
+      data: [],
+      meta: { total: 0, limit: 20, hasMore: false, nextCursor: null },
+      correlationId: 'req-123',
+    });
+    expect(dto).not.toHaveProperty('correlationId');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -452,6 +494,11 @@ describe('mapRawToIngestDTO()', () => {
     expect(dto.txHash).toBe('abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789');
   });
 
+  test('preserves numeric invoice ID normalization from the legacy mapper', () => {
+    const dto = mapRawToIngestDTO(makeHorizonRecord(), 100);
+    expect(dto.invoiceId).toBe('100');
+  });
+
   test('also accepts camelCase aliases (eventId, eventType, etc.)', () => {
     const raw = {
       eventId: 'camel_001',
@@ -469,23 +516,22 @@ describe('mapRawToIngestDTO()', () => {
     expect(dto.pagingToken).toBe('300-1');
   });
 
-  test('defaults missing id to empty string', () => {
-    const dto = mapRawToIngestDTO({}, 'inv_003');
-    expect(dto.eventId).toBe('');
+  test('rejects a missing event identity', () => {
+    expect(() => mapRawToIngestDTO({ ledger: 200 }, 'inv_003')).toThrow(TypeError);
   });
 
   test('defaults missing type to "contract_event"', () => {
-    const dto = mapRawToIngestDTO({}, 'inv_004');
+    const dto = mapRawToIngestDTO(makeHorizonRecord({ type: undefined }), 'inv_004');
     expect(dto.eventType).toBe('contract_event');
   });
 
-  test('defaults missing ledger to 0', () => {
-    const dto = mapRawToIngestDTO({}, 'inv_005');
-    expect(dto.ledgerSequence).toBe(0);
+  test('rejects missing and non-positive ledger sequence values', () => {
+    expect(() => mapRawToIngestDTO({ id: 'hz_evt' }, 'inv_005')).toThrow(TypeError);
+    expect(() => mapRawToIngestDTO(makeHorizonRecord({ ledger: 0 }), 'inv_005')).toThrow(TypeError);
   });
 
   test('defaults missing paging_token to empty string', () => {
-    const dto = mapRawToIngestDTO({}, 'inv_006');
+    const dto = mapRawToIngestDTO(makeHorizonRecord({ paging_token: undefined }), 'inv_006');
     expect(dto.pagingToken).toBe('');
   });
 
@@ -502,39 +548,34 @@ describe('mapRawToIngestDTO()', () => {
   test('eventBody is a shallow copy of the full raw record when not specified', () => {
     const raw = makeHorizonRecord();
     const dto = mapRawToIngestDTO(raw, 'inv_009');
-    // Must be a copy, not the same reference (protects against post-call mutation)
+    expect(dto.eventBody).toEqual(raw);
     expect(dto.eventBody).not.toBe(raw);
-    // Content must match the source fields
-    expect(dto.eventBody.id).toBe(raw.id);
-    expect(dto.eventBody.type).toBe(raw.type);
   });
 
   test('eventBody is a shallow copy of the explicit eventBody field when provided', () => {
     const body = { foo: 'bar' };
     const dto = mapRawToIngestDTO({ ...makeHorizonRecord(), eventBody: body }, 'inv_010');
-    // Must be a copy (protects against post-call mutation)
+    expect(dto.eventBody).toEqual(body);
     expect(dto.eventBody).not.toBe(body);
-    expect(dto.eventBody.foo).toBe('bar');
-  });
-
-  test('mutating the source raw object after DTO creation does not affect eventBody', () => {
-    const raw = makeHorizonRecord();
-    const dto = mapRawToIngestDTO(raw, 'inv_010b');
-    const originalType = dto.eventBody.type;
-    raw.type = 'mutated_after_freeze';
-    expect(dto.eventBody.type).toBe(originalType);
+    dto.eventBody.foo = 'changed';
+    expect(body.foo).toBe('bar');
   });
 
   test('observedAt is a valid ISO-8601 string', () => {
-    const dto = mapRawToIngestDTO({}, 'inv_011');
+    const dto = mapRawToIngestDTO(makeHorizonRecord(), 'inv_011');
     expect(() => new Date(dto.observedAt)).not.toThrow();
     expect(new Date(dto.observedAt).toISOString()).toBe(dto.observedAt);
   });
 
   test('uses provided observedAt when present', () => {
     const ts = '2026-05-01T08:00:00.000Z';
-    const dto = mapRawToIngestDTO({ observedAt: ts }, 'inv_012');
+    const dto = mapRawToIngestDTO(makeHorizonRecord({ observedAt: ts }), 'inv_012');
     expect(dto.observedAt).toBe(ts);
+  });
+
+  test('rejects invalid timestamps and conflicting aliases', () => {
+    expect(() => mapRawToIngestDTO(makeHorizonRecord({ observedAt: 'invalid' }), 'inv_014')).toThrow(TypeError);
+    expect(() => mapRawToIngestDTO(makeHorizonRecord({ id: 'snake', eventId: 'camel' }), 'inv_015')).toThrow(TypeError);
   });
 
   test('returned DTO is frozen', () => {
@@ -689,16 +730,14 @@ describe('double-mapping guard', () => {
     expect(typeof dto.data[0].ledgerSequence).toBe('number');
   });
 
-  test('service boundary: mapRowToEscrowEventDTO reads snake_case source columns', () => {
+  test('service boundary rejects camelCase keys when snake_case columns are required', () => {
     // Regression guard: confirm the mapper reads event_id (not eventId) from the raw row.
     const raw = makeRow({ event_id: 'snake_check' });
     const dto = mapRowToEscrowEventDTO(raw);
     expect(dto.eventId).toBe('snake_check');
-    // If a camelCase-only object were passed, event_id would be undefined → 'undefined' string
     const broken = { eventId: 'camel_only', invoice_id: 'i', event_type: 'et', ledger_sequence: 1,
       observed_at: null, created_at: null };
-    const brokenDTO = mapRowToEscrowEventDTO(broken);
-    expect(brokenDTO.eventId).toBe('undefined'); // documents the expected behaviour
+    expect(() => mapRowToEscrowEventDTO(broken)).toThrow(TypeError);
   });
 });
 

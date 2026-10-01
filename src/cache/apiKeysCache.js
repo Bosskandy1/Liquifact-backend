@@ -145,9 +145,25 @@ class ApiKeysCache {
     this._cache = new Map();
   }
 
-  getOrLoad(key = DEFAULT_CACHE_KEY, now = Date.now()) {
-    const normalizedKey = normalizeCacheKey(key);
-    const normalizedNow = normalizeTimestamp(now);
+  _validateRegistry(registry) {
+    if (!(registry instanceof Map)) {
+      throw new TypeError('loader must return a Map');
+    }
+
+    for (const [key, value] of registry) {
+      if (typeof key !== 'string' || key.trim() === '') {
+        throw new TypeError('registry keys must be non-empty strings');
+      }
+      if (value !== null && value !== undefined && typeof value !== 'object') {
+        throw new TypeError('registry values must be objects');
+      }
+    }
+
+    return registry;
+  }
+
+  getOrLoad(key = 'default', now = Date.now()) {
+    const entry = this._cache.get(key);
 
     const entry = this._cache.get(normalizedKey);
 
@@ -174,7 +190,15 @@ class ApiKeysCache {
       apiKeysCacheMissesTotal.inc();
     }
 
-    const registry = loadApiKeyRegistry();
+    let registry;
+    try {
+      registry = loadApiKeyRegistry();
+    } catch (error) {
+      throw error;
+    }
+
+    const validatedRegistry = this._validateRegistry(registry);
+    const snapshot = this._buildSnapshot(validatedRegistry, now);
 
     // Evict the oldest entry only when inserting a new key, so repeated loads
     // for the same key cannot evict unrelated entries.
@@ -185,12 +209,12 @@ class ApiKeysCache {
       }
     }
 
-    this._cache.set(normalizedKey, {
-      registry,
-      expiresAt: normalizedNow + this.ttlMs,
+    this._cache.set(key, {
+      registry: validatedRegistry,
+      expiresAt: now + this.ttlMs,
     });
 
-    return this._buildSnapshot(registry, normalizedNow);
+    return snapshot;
   }
 
   _buildHSnapshot(registry, now) {

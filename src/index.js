@@ -1,36 +1,23 @@
 'use strict';
 
 /**
- * @fileoverview Process entry point for the LiquiFact API.
+ * @fileoverview Entry point for the LiquiFact API server.
  *
- * This module re-exports the Express app built by ./app and owns process
- * lifecycle: boot configuration validation, the HTTP listen boundary,
- * background workers, and graceful-shutdown registration.
- *
- * ## The listen boundary
- * The port is the only operator-controlled value that reaches this file, and it
- * is the one that must never be passed to `app.listen()` unchecked: `net`
- * treats an unparsable string as a Unix socket path, so a typo would bind the
- * wrong kind of socket with no error at all. ./config/listenPort.js defines the
- * accepted ranges and this module enforces them, fail-closed, before any side
- * effect. See docs/entrypoint-validation-boundaries.md for the full invariant
- * list and the operational failure modes.
+ * This module provides the main entry point for the application and exports
+ * compatibility contracts used by tests and external consumers. All public
+ * APIs are documented with explicit contracts for input validation, error
+ * handling, and return types.
  *
  * @module index
  */
 
 require('dotenv').config();
 
-const crypto = require('crypto');
 const app = require('./app');
 const { validate, logRedactedSummary } = require('./config');
-const {
-  PortValidationError,
-  resolvePortFromEnv,
-  validatePortArgument,
-} = require('./config/listenPort');
-const logger = require('./logger');
+const { validateStellarConfig } = require('./config/stellar');
 const shutdownCoordinator = require('./utils/shutdownCoordinator');
+const logger = require('./logger');
 
 /**
  * The single HTTP listener owned by this process, or `null` when nothing is
@@ -48,18 +35,32 @@ const shutdownCoordinator = require('./utils/shutdownCoordinator');
 let httpServer = null;
 
 /**
+ * Module-level startup state guards to prevent concurrent/duplicate initialization.
+ * @type {{ isServerStarted: boolean, serverInstance: import('http').Server|null, fencingTokens: Map<string, string> }}
+ */
+const startupState = {
+  isServerStarted: false,
+  serverInstance: null,
+  fencingTokens: new Map(),
+};
+
+/**
  * Runs the S3 connectivity probe at startup. Failures are logged but never
  * block process start - the readiness probe (`/readyz`) surfaces storage
  * misconfiguration to orchestrators once the HTTP server is listening.
  *
- * @returns { Promise<void> }
+ * @returns {Promise<void>} Resolves when probe completes or fails silently.
+ * @throws {Error} Never throws - all errors are caught and logged internally.
  */
 async function scheduleStartupStorageProbe() {
   try {
     const storage = require('./services/storage');
     await storage.runStartupStorageProbe();
-  } catch (_err) {
+  } catch (err) {
     // Best-effort: a probe failure must not abort startup.
+    // Log for observability without blocking startup.
+    const logger = require('./logger');
+    logger.warn({ err }, 'Startup storage probe failed (non-blocking)');
   }
 }
 
@@ -68,12 +69,9 @@ async function scheduleStartupStorageProbe() {
  * In test environment, the validation is skipped to preserve lazy loading behavior.
  * Fails fast by logging a redacted summary of errors and exiting with a non-zero code.
  *
- * The return value is the fail-closed signal for the caller: `process.exit()`
- * is documented to never return, but it *is* replaced by a no-op in tests and
- * by some APM/hook wrappers. Returning `false` guarantees a rejected
- * configuration cannot reach `app.listen()` on those code paths either.
- *
- * @returns {boolean} True when the process may continue booting.
+ * @returns {void}
+ * @throws {Error} Never throws in production - exits process on validation failure.
+ *                    In test environment, returns silently without validation.
  */
 function runBootConfigValidation() {
   if (process.env.NODE_ENV === 'test') {
@@ -81,7 +79,9 @@ function runBootConfigValidation() {
   }
   try {
     validate();
-
+    const stellarConfig = validateStellarConfig();
+    process.env.STELLAR_NETWORK_PASSPHRASE = stellarConfig.passphrase;
+    
     // Boot-time dependency validation phase
     const { validateDependencies } = require('./config/dependencyValidator');
     validateDependencies();
@@ -166,63 +166,33 @@ function attachServerLifecycleHandlers(server, port) {
 
 /**
  * Starts the HTTP server on the configured port.
+ * Idempotent: if already started, returns the existing server instance.
  *
- * Validation boundaries enforced here, in order, before any side effect:
- * 1. Boot configuration - a rejected configuration stops the boot (fail-closed).
- * 2. Listen port - rejected before the storage probe, the socket, or any log
- *    line that could be mistaken for a successful start.
- * 3. Duplicate start - a second call returns the running server instead of
- *    binding a second listener and orphaning the first.
+ * Performs boot-time configuration validation, schedules a non-blocking storage
+ * connectivity probe, registers the server with the shutdown coordinator, and sets
+ * up signal listeners for graceful shutdown.
  *
- * @param {number} [portOverride] - Port to bind. `0` requests an ephemeral port.
- *   Omit to use the validated `PORT` environment variable, defaulting to 3001.
- * @returns {import('http').Server|undefined} The HTTP server instance, or
- *   `undefined` when boot validation rejected the configuration.
- * @throws {PortValidationError} If the resolved port is not a usable port.
+ * @param {number} [port] - Optional port override. If not provided, uses PORT
+ *                          environment variable or defaults to 3001.
+ * @returns {import('http').Server} The HTTP server instance.
+ * @throws {Error} May throw if server fails to bind to the specified port.
+ *                   Configuration validation failures exit the process instead of throwing.
  */
-function startServer(portOverride) {
-  if (!runBootConfigValidation()) {
-    return undefined;
+function startServer() {
+  if (startupState.isServerStarted && startupState.serverInstance) {
+    console.warn('[index] startServer called multiple times; returning existing server instance');
+    return startupState.serverInstance;
   }
 
-  const { port, source } = resolveListenPort(portOverride);
-
-  if (httpServer) {
-    logger.warn(
-      { component: 'entrypoint', event: 'http_server_start_ignored', port, source },
-      'startServer() called while a listener is already running; returning the running server.'
-    );
-    return httpServer;
-  }
-
-  logger.info(
-    { component: 'entrypoint', event: 'http_server_starting', port, source },
-    'Starting HTTP server.'
-  );
-
-  let server;
-  try {
-    server = app.listen(port);
-  } catch (err) {
-    // The slot is only claimed after a successful bind, so a synchronous
-    // failure leaves the process able to retry rather than wedged on a server
-    // that was never created.
-    logger.error(
-      {
-        component: 'entrypoint',
-        event: 'http_server_bind_failed',
-        port,
-        source,
-        errorCode: err && err.code,
-        errorName: err && err.name,
-      },
-      'app.listen() threw while binding the HTTP server.'
-    );
-    throw err;
-  }
-
-  httpServer = server;
-  attachServerLifecycleHandlers(server, port);
+  runBootConfigValidation();
+  const serverPort = port !== undefined ? port : process.env.PORT || 3001;
+  // Fire-and-forget probe -- do not await, so startup is not blocked.
+  scheduleStartupStorageProbe();
+  const server = app.listen(port);
+  
+  startupState.isServerStarted = true;
+  startupState.serverInstance = server;
+  
   shutdownCoordinator.register({ server });
   shutdownCoordinator.setupSignalListeners();
 
@@ -232,6 +202,94 @@ function startServer(portOverride) {
   scheduleStartupStorageProbe();
 
   return server;
+}
+
+function startServer() {
+  runBootConfigValidation();
+  return listenServer();
+}
+
+let backgroundWorkersStartPromise = null;
+
+/**
+ * Starts all process-owned workers as one startup operation.
+ * Successful starts are rolled back in reverse order if a later worker fails.
+ *
+ * @returns {Promise<void>}
+ */
+function startBackgroundWorkers() {
+  if (!backgroundWorkersStartPromise) {
+    backgroundWorkersStartPromise = startBackgroundWorkersOnce().catch((error) => {
+      backgroundWorkersStartPromise = null;
+      throw error;
+    });
+  }
+  return backgroundWorkersStartPromise;
+}
+
+async function startBackgroundWorkersOnce() {
+  const startedWorkers = [];
+  try {
+    const idempotencyPurge = require('./jobs/idempotencyPurge');
+    await idempotencyPurge.startPurgeWorker();
+    startedWorkers.push(idempotencyPurge);
+
+    const invoiceStatePurge = require('./jobs/invoiceStatePurge');
+    await invoiceStatePurge.startPurgeWorker();
+    startedWorkers.push(invoiceStatePurge);
+
+    for (const job of startedWorkers) {
+      shutdownCoordinator.register({ worker: job.purgeWorker });
+    }
+  } catch (error) {
+    for (const job of startedWorkers.reverse()) {
+      try {
+        await job.stopPurgeWorker();
+      } catch (stopError) {
+        logger.error(
+          { component: job.JOB_TYPE || 'idempotency_purge', errorName: stopError && stopError.name },
+          'Background worker rollback failed'
+        );
+      }
+    }
+    throw error;
+  }
+}
+
+async function stopBackgroundWorkers() {
+  const jobs = [
+    require('./jobs/invoiceStatePurge'),
+    require('./jobs/idempotencyPurge'),
+  ];
+  for (const job of jobs) {
+    try {
+      await job.stopPurgeWorker();
+    } catch (error) {
+      logger.error(
+        { component: job.JOB_TYPE || 'idempotency_purge', errorName: error && error.name },
+        'Background worker shutdown failed during startup recovery'
+      );
+    }
+  }
+}
+
+async function startApplication() {
+  runBootConfigValidation();
+  let workersStarted = false;
+  try {
+    await startBackgroundWorkers();
+    workersStarted = true;
+    listenServer();
+  } catch (error) {
+    if (workersStarted) {
+      await stopBackgroundWorkers();
+    }
+    logger.error(
+      { component: 'startup', errorName: error && error.name, errorCode: error && error.code },
+      'Application startup failed'
+    );
+    process.exitCode = 1;
+  }
 }
 
 /**
@@ -244,24 +302,55 @@ function getHttpServer() {
 }
 
 /**
- * Resets in-memory state (clears shared cache stores for test isolation).
+ * Resets in-memory state by clearing shared cache stores for test isolation.
  *
- * @returns { void }
+ * This function safely clears both the main cache store and metrics cache store.
+ * If either store is unavailable (e.g., in environments where the modules are not
+ * loaded), the function continues silently to ensure test isolation without
+ * breaking tests that don't require these stores.
+ *
+ * @returns {void}
+ * @throws {Error} Never throws - all errors are caught and logged for observability.
  */
 function resetStore() {
+  const logger = require('./logger');
+  
   try {
     const { getSharedStore } = require('./services/cacheStore');
     getSharedStore().clear();
-  } catch (_) {
+  } catch (err) {
     // intentional no-op in environments where cacheStore is unavailable
+    logger.debug({ err }, 'cacheStore clear failed (store unavailable)');
   }
 
   try {
     const { getMetricsCacheStore } = require('./services/metricsCacheStore');
     getMetricsCacheStore().clear();
-  } catch (_) {
+  } catch (err) {
     // intentional no-op in environments where metricsCacheStore is unavailable
+    logger.debug({ err }, 'metricsCacheStore clear failed (store unavailable)');
   }
+}
+
+/**
+ * Gets the fencing token for a specific worker type.
+ * Used by workers to validate their lease fencing.
+ *
+ * @param {string} workerType - The worker type (e.g., 'idempotencyPurge', 'invoiceStatePurge')
+ * @returns {string|undefined} The fencing token, or undefined if not set
+ */
+function getFencingToken(workerType) {
+  return startupState.fencingTokens.get(workerType);
+}
+
+/**
+ * Resets startup state for test isolation.
+ * @private
+ */
+function _resetStartupState() {
+  startupState.isServerStarted = false;
+  startupState.serverInstance = null;
+  startupState.fencingTokens.clear();
 }
 
 const originalCreateApp = app.createApp;
@@ -269,33 +358,64 @@ const originalCreateApp = app.createApp;
 /**
  * Returns the underlying Express app factory.
  *
- * @returns { import('express').Express} Configured Express app.
+ * This function provides a compatibility contract for tests and external consumers
+ * that need to create fresh Express app instances. Options are forwarded to the
+ * underlying app factory if it exists.
+ *
+ * @param {Object} [options] - Optional configuration options for the app factory.
+ * @param {boolean} [options.enableTestRoutes] - If true, enables test-only routes.
+ * @returns {import('express').Express} Configured Express app instance.
+ * @throws {Error} May throw if the underlying app factory fails to initialize.
  */
-function createApp() {
-  return typeof originalCreateApp === 'function' ? originalCreateApp() : app;
+function createApp(options) {
+  if (typeof originalCreateApp === 'function') {
+    return originalCreateApp(options);
+  }
+  return app;
 }
 
 // Start background workers when running as main module (not in tests)
 if (process.env.NODE_ENV !== 'test' && require.main === module) {
-  // Start the idempotency purge worker. A unique fencing token is generated
-  // per process at boot time and validated by startPurgeWorker — a missing or
-  // malformed token fails loudly rather than silently in non-test environments.
-  // Each job module owns its own start/stop guard, so this call is idempotent.
-  const { startPurgeWorker } = require('./jobs/idempotencyPurge');
-  startPurgeWorker({ fencingToken: crypto.randomUUID() });
+  // Generate and store fencing tokens for lease fencing
+  const idempotencyFencingToken = crypto.randomUUID();
+  const invoiceStateFencingToken = crypto.randomUUID();
+  
+  startupState.fencingTokens.set('idempotencyPurge', idempotencyFencingToken);
+  startupState.fencingTokens.set('invoiceStatePurge', invoiceStateFencingToken);
 
-  // Start the invoice-state retention purge worker (issue #866). It keeps its
-  // own lifecycle state, independent of the idempotency worker. The same
-  // fencing-token invariant applies.
+  // Start the idempotency purge worker with a fresh fencing token so that stale
+  // workers from a previous process can no longer write after lease loss.
+  const { startPurgeWorker } = require('./jobs/idempotencyPurge');
+  startPurgeWorker({ fencingToken: idempotencyFencingToken });
+
+  // Start the invoice-state retention purge worker (issue #866) with its own
+  // fencing token, isolated from the idempotency worker's token.
   const { startPurgeWorker: startInvoiceStatePurgeWorker } = require('./jobs/invoiceStatePurge');
-  startInvoiceStatePurgeWorker({ fencingToken: crypto.randomUUID() });
+  startInvoiceStatePurgeWorker({ fencingToken: invoiceStateFencingToken });
+
+  // Start the escrow-read tombstone purge worker (issue #31). Hard-deletes
+  // soft-deleted escrow_event_projection rows whose retention window has
+  // elapsed, preventing unbounded tombstone accumulation.
+  const { startPurgeWorker: startEscrowReadPurgeWorker } = require('./jobs/escrowReadPurge');
+  startEscrowReadPurgeWorker();
 
   startServer();
 }
 
+/**
+ * @module index
+ * @description Entry point for the LiquiFact API server.
+ *
+ * @property {import('express').Express} default - The Express app instance.
+ * @property {Function} createApp - Factory function to create Express app instances.
+ * @property {Function} startServer - Function to start the HTTP server.
+ * @property {Function} resetStore - Function to clear in-memory cache stores.
+ */
+
 module.exports = app;
 module.exports.createApp = createApp;
 module.exports.startServer = startServer;
+module.exports.startBackgroundWorkers = startBackgroundWorkers;
 module.exports.resetStore = resetStore;
-module.exports.getHttpServer = getHttpServer;
-module.exports.PortValidationError = PortValidationError;
+module.exports.getFencingToken = getFencingToken;
+module.exports._resetStartupState = _resetStartupState;

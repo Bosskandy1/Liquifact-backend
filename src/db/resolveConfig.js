@@ -3,181 +3,87 @@
 /**
  * @file src/db/resolveConfig.js
  * @description Select the Knex config block that corresponds to NODE_ENV.
- *              Extracted into a separate module to enable isolated unit testing.
  *
- *              This module is deterministic and side-effect free with respect to
- *              the process environment: the knexfile is loaded exactly once and
- *              cached, so repeated calls return the same config object and
- *              failures are reproducible and observable.
+ * Extracted into a separate, side-effect-free module so it can be
+ * unit-tested in isolation without loading knex, pino, or opening any
+ * database connection.
+ *
+ * ## Selection rules (CONTRACT 3)
+ *
+ * | Input env    | Returns                  | Throws when                          |
+ * |--------------|--------------------------|--------------------------------------|
+ * | `"test"`     | `knexfile.test`          | block is absent                      |
+ * | `"production"` | `knexfile.production`  | `DATABASE_URL` unset or block absent |
+ * | anything else | `knexfile[env]`         | block absent **and** `development`   |
+ * |              | falls back to `development` | block also absent               |
+ *
+ * ## Isolation invariants
+ *
+ * - The `test` block **never** falls back to `development` or `production`.
+ *   A missing test block is always a fatal error (CONTRACT 2).
+ * - The `production` block **never** falls back to `development`.
+ *   A missing `DATABASE_URL` or a missing `production` block is always fatal
+ *   (CONTRACT 4).
+ * - Each error thrown is an `Error` instance with a human-readable message
+ *   that names the problematic environment and/or missing variable so the
+ *   operator can diagnose the problem without reading source code (CONTRACT 15).
+ *
  * @module src/db/resolveConfig
  */
 
 /**
- * Error codes emitted by this module. These are stable contracts that
- * callers (operational tooling, migration scripts, tests) may rely on.
- * @enum {string}
- */
-const ERROR_CODES = Object.freeze({
-  MISSING_TEST_CONFIG: 'DB_MISSING_TEST_CONFIG',
-  MISSING_PRODUCTION_CONFIG: 'DB_MISSING_PRODUCTION_CONFIG',
-  MISSING_DATABASE_URL: 'DB_MISSING_DATABASE_URL',
-  MISSING_CONFIG: 'DB_MISSING_CONFIG',
-  INVALID_ENVIRONMENT: 'DB_INVALID_ENVIRONMENT',
-});
-
-/**
- * The canonical environment names that this module recognises. Any other
- * non-empty string is treated as a development-like environment and falls
- * back to the development config block.
- * @type {ReadonlyArray<string>}
- */
-const KNOWN_ENVIRONMENTS = Object.freeze(['development', 'test', 'production']);
-
-/**
- * Cached knexfile module. Loading is lazy and memoised so that:
- *   1. Requiring this module never touches the filesystem until needed.
- *   2. Repeated calls are deterministic (same object reference).
- *   3. A failure to load the knexfile is not silently retried with different
- *      results.
- * @type {Object|null}
- */
-let cachedAllConfigs = null;
-
-/**
- * Reset the internal knexfile cache. Exposed only for tests that need to
- * simulate a cold start or a changed knexfile. Production code should not
- * call this.
+ * Normalise an environment name into a stable lookup key.
  *
- * @returns {void}
- */
-function __resetCacheForTests() {
-  cachedAllConfigs = null;
-}
-
-/**
- * Load and cache the knexfile config blocks.
+ * The key is trimmed and lowercased so that callers passing
+ * `"production "`, `"PRODUCTION"`, or `undefined` get deterministic
+ * behaviour. Non-string inputs are treated as an empty string so the
+ * default development block is selected instead of throwing a TypeError.
  *
- * The knexfile is required lazily and cached on first use. If the require
- * throws (e.g. a syntax error or a missing module), the failure is not
- * cached: the next call retries the load. This keeps transient dependency
- * failures recoverable while keeping successful loads deterministic.
- *
- * @returns {Object} The knexfile config blocks.
- * @throws {Error} When the knexfile cannot be loaded or does not export
- *   an object.
+ * @param {*} environment - Raw NODE_ENV value.
+ * @returns {string} Normalised lookup key.
  */
-function loadAllConfigs() {
-  if (cachedAllConfigs !== null) {
-    return cachedAllConfigs;
+function normaliseEnvironment(environment) {
+  if (typeof environment !== 'string') {
+    return '';
   }
-
-  let loaded;
-  try {
-    loaded = require('../../knexfile');
-  } catch (cause) {
-    const err = new Error(
-      '[db] Failed to load knexfile.js. Ensure the file exists and is valid JavaScript.'
-    );
-    err.code = ERROR_CODES.MISSING_CONFIG;
-    err.cause = cause;
-    throw err;
-  }
-
-  if (!loaded || typeof loaded !== 'object') {
-    const err = new Error(
-      '[db] knexfile.js must export a config object.'
-    );
-    err.code = ERROR_CODES.MISSING_CONFIG;
-    throw err;
-  }
-
-  cachedAllConfigs = loaded;
-  return cachedAllConfigs;
-}
-
-/**
- * Build a consistent, observable error for a missing or invalid config.
- *
- * Every error carries a stable `code` and a `context` object with non-secret
- * details so failures can be diagnosed without leaking credentials.
- *
- * @param {string} code - Stable error code.
- * @param {string} message - Human-readable message.
- * @param {Object} [context] - Non-secret diagnostic context.
- * @returns {Error}
- */
-function configError(code, message, context) {
-  const err = new Error(message);
-  err.code = code;
-  if (context && typeof context === 'object') {
-    err.context = context;
-  }
-  return err;
-}
-
-/**
- * Log a redacted diagnostic line for a config resolution failure.
- *
- * Only non-secret metadata is emitted: the error code, the requested
- * environment, and whether the expected config block was present. Values
- * such as `DATABASE_URL` are never included.
- *
- * @param {Error} err - The error being reported.
- * @param {string} environment - The requested environment.
- * @returns {void}
- */
-function logFailure(err, environment) {
-  const payload = {
-    code: err && err.code ? err.code : 'DB_UNKNOWN_ERROR',
-    environment,
-  };
-  if (err && err.context) {
-    Object.assign(payload, err.context);
-  }
-  // eslint-disable-next-line no-console
-  console.error('[db] resolveConfig failure', payload);
+  return environment.trim().toLowerCase();
 }
 
 /**
  * Load the knexfile config block that corresponds to `environment`.
  *
- * This function is deterministic and idempotent:
- *   - Valid inputs always resolve to the same config block for a given
- *     knexfile and process environment.
- *   - Invalid inputs always throw the same error code and message.
- *   - No module-level mutable state is changed except the lazy knexfile
- *     cache, which is write-once and then read-only.
- *
- * Throws an explicit error when NODE_ENV=test but the `test` block is missing,
- * or when NODE_ENV=production and DATABASE_URL is not set.
- *
  * @param {string} environment - The resolved NODE_ENV value.
- * @returns {import('knex').Knex.Config} Knex configuration object.
- * @throws {Error} When the environment is invalid or the required config
- *   block is missing.
+ * @returns {import('knex').Knex.Config} The Knex configuration object for the
+ *   given environment. The returned object is the same reference stored in
+ *   `knexfile.js`, so repeated calls with the same argument return the same
+ *   object (idempotent within a Node process lifetime).
+ * @throws {Error} When the environment cannot be mapped to a valid, safe
+ *   config block. Every thrown value is an `Error` instance (CONTRACT 15).
  */
 function resolveConfig(environment) {
-  if (typeof environment !== 'string' || environment.trim() === '') {
-    const err = configError(
-      ERROR_CODES.INVALID_ENVIRONMENT,
-      '[db] NODE_ENV must be a non-empty string.',
-      { environment: String(environment) }
-    );
-    logFailure(err, environment);
-    throw err;
-  }
+  // Require is deferred (not at the top of the file) so that:
+  //  1. Jest's `jest.doMock('../../knexfile', ...)` calls made *before*
+  //     `require('../../src/db/resolveConfig')` take effect when this
+  //     function is invoked.
+  //  2. Tests using `jest.isolateModules` get a fresh require cache for
+  //     both this module and knexfile, so mock substitutions are scoped.
+  validateEnvironment(environment);
 
-  const normalized = environment.trim().toLowerCase();
-  const allConfigs = loadAllConfigs();
+  const allConfigs = require('../../knexfile');
+  const key = normaliseEnvironment(environment);
 
-  if (normalized === 'test') {
+  // ------------------------------------------------------------------
+  // test — fully isolated, no fallback permitted (CONTRACT 2, 3, 16)
+  // ------------------------------------------------------------------
+  if (environment === 'test') {
     const testConfig = allConfigs.test;
     if (!testConfig) {
       const err = configError(
         ERROR_CODES.MISSING_TEST_CONFIG,
         '[db] No "test" config block found in knexfile.js. ' +
-          'The test environment must use an isolated database configuration.',
-        { environment: normalized, hasTestBlock: false }
+          'The test environment must use an isolated database configuration ' +
+          '(better-sqlite3 :memory:). Falling back to development or ' +
+          'production config in tests is not permitted.'
       );
       logFailure(err, normalized);
       throw err;
@@ -186,54 +92,54 @@ function resolveConfig(environment) {
     return testConfig;
   }
 
-  if (normalized === 'production') {
+  // ------------------------------------------------------------------
+  // production — DATABASE_URL required, no fallback permitted (CONTRACT 4)
+  // ------------------------------------------------------------------
+  if (environment === 'production') {
+    // Guard: DATABASE_URL must be set before we even look at the config block.
+    // An empty string is treated as absent (falsy check).
     if (!process.env.DATABASE_URL) {
-      const err = configError(
-        ERROR_CODES.MISSING_DATABASE_URL,
-        '[db] DATABASE_URL must be set when NODE_ENV=production.',
-        { environment: normalized, hasDatabaseUrl: false }
+      throw new Error(
+        '[db] DATABASE_URL must be set when NODE_ENV=production. ' +
+          'The application cannot start without a valid PostgreSQL connection string. ' +
+          'Never fall back to a SQLite database in production.'
       );
       logFailure(err, normalized);
       throw err;
     }
+
     const prodConfig = allConfigs.production;
     if (!prodConfig) {
-      const err = configError(
-        ERROR_CODES.MISSING_PRODUCTION_CONFIG,
-        '[db] No "production" config block found in knexfile.js.',
-        { environment: normalized, hasProductionBlock: false }
+      throw new Error(
+        '[db] No "production" config block found in knexfile.js. ' +
+          'Add a production block with client: "pg" and connection: process.env.DATABASE_URL.'
       );
-      logFailure(err, normalized);
-      throw err;
     }
+
     validateConfigStructure(prodConfig, environment);
     return prodConfig;
   }
 
-  // Development-like environments: prefer an exact block match, then fall
-  // back to the development block. This is the documented behaviour for
-  // any non-test, non-production NODE_ENV value.
-  const devConfig = allConfigs.development;
-  const exactConfig = allConfigs[normalized];
-  const resolved = exactConfig || devConfig;
-  if (!resolved) {
-    const err = configError(
-      ERROR_CODES.MISSING_CONFIG,
-      `+db] No config block found for NODE_ENV="${normalized}" in knexfile.js.`,
-      {
-        environment: normalized,
-        knownEnvironments: KNOWN_ENVIRONMENTS.slice(),
-        hasDevelopmentBlock: Boolean(devConfig),
-      }
+  // ------------------------------------------------------------------
+  // Other environments (development, staging, etc.)
+  // Falls back to the "development" block when the exact env key is absent.
+  // ------------------------------------------------------------------
+  const envConfig = allConfigs[environment] || allConfigs.development;
+  if (!envConfig) {
+    throw new Error(
+      `[db] No config block found for NODE_ENV="${environment}" in knexfile.js ` +
+        'and no "development" fallback block exists. ' +
+        `Add a "${environment}" or "development" block to knexfile.js.`
     );
     logFailure(err, normalized);
     throw err;
   }
-  return resolved;
+
+  return envConfig;
+  validateConfigStructure(devConfig, environment);
+  return devConfig;
 }
 
-resolveConfig.ERROR_CODES = ERROR_CODES;
-resolveConfig.KNOWN_ENVIRONMENTS = KNOWN_ENVIRONMENTS;
-resolveConfig.__resetCacheForTests = __resetCacheForTests;
+resolveConfig.normaliseEnvironment = normaliseEnvironment;
 
 module.exports = resolveConfig;

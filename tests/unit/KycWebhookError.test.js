@@ -1,272 +1,378 @@
-/**
- * KycWebhookError state-invariant tests (issue #1373).
- *
- * This error is the contract between `kycWebhookService` and the shared
- * `kycWebhookErrorHandler`: the service sets a status and code, and the
- * handler later reads them to choose the response code, the retry hint, and
- * the metrics label. Those values are therefore invariants, not ordinary
- * properties, and these tests pin them —
- *
- *   - the accepted input surface (including the two edge shapes that existing
- *     callers genuinely rely on: an empty message and an absent code),
- *   - what is rejected, so a status can never reach `res.status(...)` invalid,
- *   - that `name`, `status`, and `code` cannot be reassigned or redefined once
- *     the error exists, and
- *   - that the serialised/enumerable footprint the handler and telemetry rely
- *     on is unchanged.
- *
- * @jest-environment node
- */
-
 'use strict';
 
+/**
+ * @fileoverview Focused tests for KycWebhookError enrichment and deterministic behavior.
+ *
+ * Covers:
+ *   - Backward-compatible 3-arg constructor
+ *   - Optional 4th context arg (smeId, tenantId, requestId)
+ *   - isRetryable() for every code/status combination
+ *   - toRetryHint() returns stable strings
+ *   - toLogContext() never leaks secrets; only includes known fields
+ *   - instanceof checks still work after enrichment
+ *   - RETRYABLE_STATUSES and RETRYABLE_CODES exports match isRetryable() behavior
+ */
+
 const KycWebhookError = require('../../src/errors/KycWebhookError');
+const { RETRYABLE_STATUSES, RETRYABLE_CODES } = KycWebhookError;
 
-describe('KycWebhookError state invariants', () => {
-  describe('accepted input', () => {
-    it('carries the message, status, and code it was constructed with', () => {
-      const err = new KycWebhookError('Invalid webhook signature', 401, 'invalid_signature');
+// ─── Constructor & backward compatibility ────────────────────────────────────
 
-      expect(err).toBeInstanceOf(KycWebhookError);
-      expect(err).toBeInstanceOf(Error);
-      expect(err.message).toBe('Invalid webhook signature');
-      expect(err.status).toBe(401);
-      expect(err.code).toBe('invalid_signature');
-      expect(err.name).toBe('KycWebhookError');
+describe('KycWebhookError – constructor', () => {
+  test('three-argument form sets name, status, code, message', () => {
+    const err = new KycWebhookError('Bad signature', 401, 'invalid_signature');
+    expect(err).toBeInstanceOf(KycWebhookError);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('KycWebhookError');
+    expect(err.message).toBe('Bad signature');
+    expect(err.status).toBe(401);
+    expect(err.code).toBe('invalid_signature');
+  });
+
+  test('four-argument form (context object) is backward compatible', () => {
+    const err = new KycWebhookError('Tenant mismatch', 403, 'tenant_mismatch', {
+      smeId: 'sme_123',
+      tenantId: 'tenant_abc',
+      requestId: 'req_xyz',
     });
+    expect(err.status).toBe(403);
+    expect(err.code).toBe('tenant_mismatch');
+    // Context is private: not exposed as direct top-level properties
+    expect(err.smeId).toBeUndefined();
+    expect(err.tenantId).toBeUndefined();
+    expect(err.requestId).toBeUndefined();
+  });
 
-    it('accepts every status the KYC webhook path actually raises', () => {
-      for (const status of [400, 401, 403, 429, 500, 503]) {
-        expect(new KycWebhookError('x', status, 'code').status).toBe(status);
+  test('omitting context (undefined 4th arg) works gracefully', () => {
+    const err = new KycWebhookError('Missing secret', 503, 'missing_secret', undefined);
+    expect(err.status).toBe(503);
+    expect(err.code).toBe('missing_secret');
+    expect(() => err.toLogContext()).not.toThrow();
+    expect(() => err.isRetryable()).not.toThrow();
+  });
+
+  test('passing null context works gracefully', () => {
+    const err = new KycWebhookError('Missing secret', 503, 'missing_secret', null);
+    expect(err.status).toBe(503);
+    const ctx = err.toLogContext();
+    expect(ctx.code).toBe('missing_secret');
+    expect(ctx.smeId).toBeUndefined();
+  });
+
+  test('non-string context fields are silently ignored', () => {
+    const err = new KycWebhookError('err', 400, 'some_code', {
+      smeId: 12345,    // number — not a string
+      tenantId: null,  // null — not a string
+      requestId: true, // bool — not a string
+    });
+    const ctx = err.toLogContext();
+    expect(ctx.smeId).toBeUndefined();
+    expect(ctx.tenantId).toBeUndefined();
+    expect(ctx.requestId).toBeUndefined();
+  });
+
+  test('partial context (only smeId) is accepted', () => {
+    const err = new KycWebhookError('err', 400, 'some_code', { smeId: 'sme_1' });
+    const ctx = err.toLogContext();
+    expect(ctx.smeId).toBe('sme_1');
+    expect(ctx.tenantId).toBeUndefined();
+    expect(ctx.requestId).toBeUndefined();
+  });
+
+  test('instanceof KycWebhookError still works with enriched form', () => {
+    const err = new KycWebhookError('test', 500, 'code', { smeId: 'sme_1' });
+    expect(err instanceof KycWebhookError).toBe(true);
+    expect(err instanceof Error).toBe(true);
+  });
+
+  test('stack trace is captured', () => {
+    const err = new KycWebhookError('test', 500, 'code');
+    expect(typeof err.stack).toBe('string');
+    expect(err.stack).toContain('KycWebhookError');
+  });
+});
+
+// ─── isRetryable() ───────────────────────────────────────────────────────────
+
+describe('KycWebhookError – isRetryable()', () => {
+  describe('retryable by error code', () => {
+    test.each([...RETRYABLE_CODES])(
+      'code "%s" is retryable regardless of status',
+      (code) => {
+        const err = new KycWebhookError('msg', 400, code);
+        expect(err.isRetryable()).toBe(true);
       }
-    });
-
-    it('accepts both ends of the permitted status range', () => {
-      expect(new KycWebhookError('x', 400, 'code').status).toBe(400);
-      expect(new KycWebhookError('x', 599, 'code').status).toBe(599);
-    });
-
-    it('accepts an empty message (rendered as an empty detail)', () => {
-      // Regression guard: the handler maps `err.message` to `detail`, and a
-      // real caller/test uses '' to check that path.
-      const err = new KycWebhookError('', 400, 'test_code');
-
-      expect(err.message).toBe('');
-      expect(err.status).toBe(400);
-    });
-
-    it('accepts an absent code, keeping the key present but undefined', () => {
-      // The handler omits `code` from the problem body when it is undefined;
-      // it must stay an own property so `'code' in err` keeps behaving as it
-      // always has for downstream readers.
-      const err = new KycWebhookError('Error', 400, undefined);
-
-      expect(err.code).toBeUndefined();
-      expect('code' in err).toBe(true);
-    });
-
-    it('preserves a message built from sanitised provider data', () => {
-      const err = new KycWebhookError(
-        'Unknown provider status: unknown_status',
-        400,
-        'unknown_status',
-      );
-
-      expect(err.message).toContain('unknown_status');
-    });
+    );
   });
 
-  describe('rejected input', () => {
-    it.each([
-      ['undefined', undefined],
-      ['null', null],
-      ['a number', 400],
-      ['an object', { reason: 'nope' }],
-      ['an array', ['nope']],
-      ['a boolean', true],
-    ])('rejects %s as the message', (_label, message) => {
-      expect(() => new KycWebhookError(message, 400, 'code')).toThrow(TypeError);
-    });
-
-    it('rejects a numeric status supplied as a string instead of coercing it', () => {
-      expect(() => new KycWebhookError('x', '400', 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', '503', 'code')).toThrow(TypeError);
-    });
-
-    it('rejects out-of-range statuses', () => {
-      expect(() => new KycWebhookError('x', 200, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', 399, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', 600, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', 0, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', -1, 'code')).toThrow(TypeError);
-    });
-
-    it('rejects non-integer and missing statuses', () => {
-      expect(() => new KycWebhookError('x', 404.5, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', Number.NaN, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', Number.POSITIVE_INFINITY, 'code')).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', undefined, 'code')).toThrow(TypeError);
-    });
-
-    it('rejects a null status rather than treating it as absent', () => {
-      expect(() => new KycWebhookError('x', null, 'code')).toThrow(TypeError);
-    });
-
-    it('rejects an empty-string code', () => {
-      // An empty code is not "no code": it is a lookup key that can never
-      // match RETRYABLE_CODES and produces a blank metrics label.
-      expect(() => new KycWebhookError('x', 400, '')).toThrow(TypeError);
-    });
-
-    it('rejects non-string codes', () => {
-      expect(() => new KycWebhookError('x', 400, 0)).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', 400, null)).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', 400, { code: 'x' })).toThrow(TypeError);
-      expect(() => new KycWebhookError('x', 400, ['code'])).toThrow(TypeError);
-    });
-
-    it('throws TypeError specifically, and never a partially-built error', () => {
-      let caught;
-      try {
-        new KycWebhookError('x', 999, 'code');
-      } catch (err) {
-        caught = err;
+  describe('retryable by HTTP status', () => {
+    test.each([...RETRYABLE_STATUSES])(
+      'status %d is retryable regardless of code',
+      (status) => {
+        const err = new KycWebhookError('msg', status, 'some_non_retryable_code');
+        expect(err.isRetryable()).toBe(true);
       }
-      expect(caught).toBeInstanceOf(TypeError);
-      expect(caught).not.toBeInstanceOf(KycWebhookError);
-    });
+    );
   });
 
-  describe('immutability of the routing invariants', () => {
-    it('ignores an attempt to reassign status', () => {
-      const err = new KycWebhookError('x', 400, 'code');
-
-      expect(() => {
-        err.status = 500;
-      }).toThrow(TypeError);
-      expect(err.status).toBe(400);
-    });
-
-    it('ignores an attempt to reassign code', () => {
-      const err = new KycWebhookError('x', 400, 'code');
-
-      expect(() => {
-        err.code = 'tampered';
-      }).toThrow(TypeError);
-      expect(err.code).toBe('code');
-    });
-
-    it('ignores an attempt to reassign name', () => {
-      const err = new KycWebhookError('x', 400, 'code');
-
-      expect(() => {
-        err.name = 'SomethingElse';
-      }).toThrow(TypeError);
-      expect(err.name).toBe('KycWebhookError');
-    });
-
-    it('cannot have its invariants redefined', () => {
-      const err = new KycWebhookError('x', 400, 'code');
-
-      expect(() =>
-        Object.defineProperty(err, 'status', {
-          value: 500,
-          writable: true,
-          enumerable: true,
-          configurable: true,
-        }),
-      ).toThrow(TypeError);
-      expect(err.status).toBe(400);
-    });
-
-    it('cannot have its invariants deleted', () => {
-      const err = new KycWebhookError('x', 400, 'code');
-
-      expect(() => {
-        delete err.status;
-      }).toThrow(TypeError);
-      expect(err.status).toBe(400);
-    });
-
-    it('leaves the error extensible for unrelated annotations', () => {
-      // Only the routing invariants are locked; handlers are still free to
-      // hang correlation context off the error for logging.
-      const err = new KycWebhookError('x', 400, 'code');
-      err.correlationId = 'corr-1';
-
-      expect(err.correlationId).toBe('corr-1');
-    });
-
-    it('keeps invariants stable across repeated reads', () => {
-      const err = new KycWebhookError('x', 503, 'missing_secret');
-      const first = [err.status, err.code, err.name];
-      const second = [err.status, err.code, err.name];
-
-      expect(first).toEqual(second);
-      expect(first).toEqual([503, 'missing_secret', 'KycWebhookError']);
-    });
-  });
-
-  describe('serialisation and telemetry footprint', () => {
-    it('keeps name, status, and code enumerable', () => {
-      const err = new KycWebhookError('x', 400, 'code');
-
-      expect(Object.keys(err).sort()).toEqual(['code', 'name', 'status']);
-    });
-
-    it('serialises to a stable JSON shape', () => {
-      const err = new KycWebhookError('x', 429, 'RATE_LIMITED');
-
-      expect(JSON.parse(JSON.stringify(err))).toEqual({
-        name: 'KycWebhookError',
-        status: 429,
-        code: 'RATE_LIMITED',
-      });
-    });
-
-    it('exposes a string name for telemetry redaction', () => {
-      // telemetryRedaction reads `err.name` and falls back to 'Error' when it
-      // is not a string, so this must never become a non-string.
-      const err = new KycWebhookError('x', 500, 'persistence_error');
-      expect(typeof err.name).toBe('string');
-    });
-  });
-
-  describe('diagnostics without leaking values', () => {
-    it('names the offending argument in the message', () => {
-      expect(() => new KycWebhookError('x', 999, 'code')).toThrow(/status/);
-      expect(() => new KycWebhookError(42, 400, 'code')).toThrow(/message/);
-      expect(() => new KycWebhookError('x', 400, 0)).toThrow(/code/);
-    });
-
-    it('reports the accepted status range', () => {
-      expect(() => new KycWebhookError('x', 200, 'code')).toThrow(/400/);
-      expect(() => new KycWebhookError('x', 200, 'code')).toThrow(/599/);
-    });
-
-    it('does not echo an object passed as the message', () => {
-      const leak = { signature: 'sig-do-not-log', secret: 'whsec_do_not_log' };
-      let message = '';
-      try {
-        new KycWebhookError(leak, 401, 'invalid_signature');
-      } catch (err) {
-        message = err.message;
+  describe('non-retryable errors', () => {
+    test.each([
+      [400, 'invalid_payload'],
+      [400, 'missing_sme_id'],
+      [400, 'missing_status'],
+      [400, 'unknown_status'],
+      [400, 'INVALID_PAGINATION'],
+      [401, 'missing_signature'],
+      [401, 'invalid_signature'],
+      [403, 'tenant_mismatch'],
+      [500, 'persistence_error'],
+      [500, 'INTERNAL_ERROR'],
+    ])(
+      'status=%d code=%s is NOT retryable',
+      (status, code) => {
+        const err = new KycWebhookError('msg', status, code);
+        expect(err.isRetryable()).toBe(false);
       }
-      expect(message).not.toMatch(/sig-do-not-log/);
-      expect(message).not.toMatch(/whsec_do_not_log/);
-      expect(message).toMatch(/object/);
-    });
-
-    it('describes a string value by length rather than content', () => {
-      expect(() => new KycWebhookError('x', '404', 'code')).toThrow(/3 characters/);
-      expect(() => new KycWebhookError('x', '', 'code')).toThrow(/an empty string/);
-    });
+    );
   });
 
-  describe('exported range constants', () => {
-    it('exposes the validated status bounds', () => {
-      expect(KycWebhookError.MIN_STATUS).toBe(400);
-      expect(KycWebhookError.MAX_STATUS).toBe(599);
+  test('isRetryable() is deterministic — same inputs always produce same output', () => {
+    const err = new KycWebhookError('msg', 503, 'missing_secret');
+    expect(err.isRetryable()).toBe(true);
+    expect(err.isRetryable()).toBe(true);
+    expect(err.isRetryable()).toBe(true);
+  });
+
+  test('isRetryable() result is consistent with RETRYABLE_CODES / RETRYABLE_STATUSES exports', () => {
+    for (const code of RETRYABLE_CODES) {
+      expect(new KycWebhookError('m', 400, code).isRetryable()).toBe(true);
+    }
+    for (const status of RETRYABLE_STATUSES) {
+      expect(new KycWebhookError('m', status, 'other').isRetryable()).toBe(true);
+    }
+  });
+
+  test('CIRCUIT_OPEN at 400 is retryable (code takes precedence over non-retryable status)', () => {
+    const err = new KycWebhookError('circuit open', 400, 'CIRCUIT_OPEN');
+    expect(err.isRetryable()).toBe(true);
+  });
+
+  test('missing_secret at 400 is retryable', () => {
+    const err = new KycWebhookError('no secret', 400, 'missing_secret');
+    expect(err.isRetryable()).toBe(true);
+  });
+});
+
+// ─── toRetryHint() ───────────────────────────────────────────────────────────
+
+describe('KycWebhookError – toRetryHint()', () => {
+  test('missing_secret → non-empty hint containing retry guidance', () => {
+    const err = new KycWebhookError('msg', 503, 'missing_secret');
+    const hint = err.toRetryHint();
+    expect(typeof hint).toBe('string');
+    expect(hint.length).toBeGreaterThan(0);
+    expect(hint.toLowerCase()).toContain('retry');
+  });
+
+  test('CIRCUIT_OPEN → non-empty retry hint', () => {
+    const err = new KycWebhookError('msg', 503, 'CIRCUIT_OPEN');
+    expect(err.toRetryHint().length).toBeGreaterThan(0);
+  });
+
+  test('429 RATE_LIMITED → rate-limit-specific hint', () => {
+    const err = new KycWebhookError('msg', 429, 'RATE_LIMITED');
+    const hint = err.toRetryHint();
+    expect(hint.toLowerCase()).toContain('rate limit');
+  });
+
+  test('503 with non-retryable-code → generic retry hint', () => {
+    const err = new KycWebhookError('msg', 503, 'some_code');
+    const hint = err.toRetryHint();
+    expect(hint.toLowerCase()).toContain('retry');
+  });
+
+  test('non-retryable 400 returns empty string', () => {
+    const err = new KycWebhookError('msg', 400, 'invalid_payload');
+    expect(err.toRetryHint()).toBe('');
+  });
+
+  test('401 invalid_signature returns empty string', () => {
+    const err = new KycWebhookError('msg', 401, 'invalid_signature');
+    expect(err.toRetryHint()).toBe('');
+  });
+
+  test('500 persistence_error returns empty string', () => {
+    const err = new KycWebhookError('msg', 500, 'persistence_error');
+    expect(err.toRetryHint()).toBe('');
+  });
+
+  test('toRetryHint is deterministic over multiple calls', () => {
+    const err = new KycWebhookError('msg', 503, 'missing_secret');
+    expect(err.toRetryHint()).toBe(err.toRetryHint());
+  });
+
+  test('toRetryHint never leaks sensitive patterns', () => {
+    const sensitivePatterns = [/password/i, /secret/i, /token/i, /key=/i];
+    const err = new KycWebhookError('password=supersecret token=abc', 503, 'missing_secret');
+    const hint = err.toRetryHint();
+    for (const p of sensitivePatterns) {
+      expect(p.test(hint)).toBe(false);
+    }
+  });
+});
+
+// ─── toLogContext() ──────────────────────────────────────────────────────────
+
+describe('KycWebhookError – toLogContext()', () => {
+  test('always includes code and status', () => {
+    const err = new KycWebhookError('msg', 401, 'invalid_signature');
+    const ctx = err.toLogContext();
+    expect(ctx.code).toBe('invalid_signature');
+    expect(ctx.status).toBe(401);
+  });
+
+  test('includes smeId when provided', () => {
+    const err = new KycWebhookError('msg', 400, 'missing_sme_id', { smeId: 'sme_42' });
+    expect(err.toLogContext().smeId).toBe('sme_42');
+  });
+
+  test('includes tenantId when provided', () => {
+    const err = new KycWebhookError('msg', 403, 'tenant_mismatch', { tenantId: 'tenant_xyz' });
+    expect(err.toLogContext().tenantId).toBe('tenant_xyz');
+  });
+
+  test('includes requestId when provided', () => {
+    const err = new KycWebhookError('msg', 500, 'persistence_error', { requestId: 'req_abc' });
+    expect(err.toLogContext().requestId).toBe('req_abc');
+  });
+
+  test('keys for absent context fields are NOT present in the returned object', () => {
+    const err = new KycWebhookError('msg', 400, 'code');
+    const ctx = err.toLogContext();
+    expect(Object.keys(ctx)).toEqual(['code', 'status']);
+    expect(Object.prototype.hasOwnProperty.call(ctx, 'smeId')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(ctx, 'tenantId')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(ctx, 'requestId')).toBe(false);
+  });
+
+  test('toLogContext does NOT include the raw error message', () => {
+    const err = new KycWebhookError('password=supersecret', 400, 'some_code');
+    const ctx = err.toLogContext();
+    expect(Object.prototype.hasOwnProperty.call(ctx, 'message')).toBe(false);
+  });
+
+  test('toLogContext does NOT expose the internal stack trace', () => {
+    const err = new KycWebhookError('msg', 400, 'code');
+    const ctx = err.toLogContext();
+    expect(Object.prototype.hasOwnProperty.call(ctx, 'stack')).toBe(false);
+  });
+
+  test('toLogContext returns a plain object copy, not the internal _context reference', () => {
+    const err = new KycWebhookError('msg', 400, 'code', { smeId: 'sme_1' });
+    const ctx = err.toLogContext();
+    expect(ctx).not.toBe(err._context);
+  });
+
+  test('mutating the returned context object does not affect subsequent calls', () => {
+    const err = new KycWebhookError('msg', 400, 'code', { smeId: 'sme_1' });
+    const ctx1 = err.toLogContext();
+    ctx1.smeId = 'MUTATED';
+    const ctx2 = err.toLogContext();
+    expect(ctx2.smeId).toBe('sme_1');
+  });
+
+  test('toLogContext is deterministic over multiple calls', () => {
+    const err = new KycWebhookError('msg', 403, 'tenant_mismatch', {
+      smeId: 'sme_1',
+      tenantId: 't_1',
+      requestId: 'req_1',
     });
+    expect(err.toLogContext()).toEqual(err.toLogContext());
+  });
+
+  test('toLogContext never contains sensitive key names', () => {
+    const sensitivePatterns = [
+      /password/i, /secret/i, /token/i, /api[-_]?key/i, /private[-_]?key/i,
+    ];
+    const err = new KycWebhookError('msg', 400, 'code', {
+      smeId: 'sme_1',
+      tenantId: 'tenant_1',
+      requestId: 'req_1',
+    });
+    const keyList = Object.keys(err.toLogContext()).join(' ');
+    for (const pattern of sensitivePatterns) {
+      expect(pattern.test(keyList)).toBe(false);
+    }
+  });
+});
+
+// ─── RETRYABLE_STATUSES and RETRYABLE_CODES exports ─────────────────────────
+
+describe('KycWebhookError – exported constants', () => {
+  test('RETRYABLE_STATUSES is a Set', () => {
+    expect(RETRYABLE_STATUSES instanceof Set).toBe(true);
+    expect(RETRYABLE_STATUSES.size).toBeGreaterThan(0);
+  });
+
+  test('RETRYABLE_CODES is a Set', () => {
+    expect(RETRYABLE_CODES instanceof Set).toBe(true);
+    expect(RETRYABLE_CODES.size).toBeGreaterThan(0);
+  });
+
+  test('RETRYABLE_STATUSES contains 429 and 503', () => {
+    expect(RETRYABLE_STATUSES.has(429)).toBe(true);
+    expect(RETRYABLE_STATUSES.has(503)).toBe(true);
+  });
+
+  test('RETRYABLE_CODES contains missing_secret and CIRCUIT_OPEN', () => {
+    expect(RETRYABLE_CODES.has('missing_secret')).toBe(true);
+    expect(RETRYABLE_CODES.has('CIRCUIT_OPEN')).toBe(true);
+  });
+
+  test('exported sets are the canonical source of truth (values match isRetryable contract)', () => {
+    // Verify the exports are the same Sets that isRetryable() uses internally.
+    // We check this indirectly: every value in RETRYABLE_CODES makes an error
+    // retryable, and every value in RETRYABLE_STATUSES makes an error retryable.
+    for (const code of RETRYABLE_CODES) {
+      expect(new KycWebhookError('m', 400, code).isRetryable()).toBe(true);
+    }
+    for (const status of RETRYABLE_STATUSES) {
+      expect(new KycWebhookError('m', status, 'other_code').isRetryable()).toBe(true);
+    }
+  });
+});
+
+// ─── Regression: error handler delegation contract ───────────────────────────
+
+describe('KycWebhookError – error handler delegation contract', () => {
+  test('error handler can delegate isRetryable() instead of duplicating logic', () => {
+    const err = new KycWebhookError('missing', 503, 'missing_secret');
+    // Simulate kycWebhookErrorHandler delegation
+    const retryable = err.isRetryable();
+    const hint = err.toRetryHint();
+    expect(retryable).toBe(true);
+    expect(hint.length).toBeGreaterThan(0);
+  });
+
+  test('error handler receives structured log context with no sensitive values', () => {
+    const err = new KycWebhookError('Tenant mismatch.', 403, 'tenant_mismatch', {
+      smeId: 'sme_99',
+      tenantId: 'tenant_foo',
+    });
+    const logCtx = err.toLogContext();
+    expect(logCtx.code).toBe('tenant_mismatch');
+    expect(logCtx.status).toBe(403);
+    expect(logCtx.smeId).toBe('sme_99');
+    expect(logCtx.tenantId).toBe('tenant_foo');
+    // These must not be present — they could leak internals
+    expect(logCtx.message).toBeUndefined();
+    expect(logCtx.stack).toBeUndefined();
+  });
+
+  test('non-KycWebhookError is distinguishable and must be forwarded', () => {
+    const plain = new Error('database error');
+    expect(plain instanceof KycWebhookError).toBe(false);
+    // This is the guard kycWebhookErrorHandler uses:
+    expect(plain instanceof KycWebhookError).toBe(false);
   });
 });

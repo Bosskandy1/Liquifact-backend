@@ -7,50 +7,22 @@
  *
  *   API_KEYS={"key":"lf_abc123","clientId":"service-a","scopes":["invoices:read"]};{"key":"lf_xyz789","clientId":"service-b","scopes":["invoices:write","escrow:read"],"revoked":true}
  *
- * ## Failure recovery
+ * ## Compatibility contract (covered by tests/apiKeys.compat.test.js)
  *
- * Configuration is re-read on every authenticated request, so a malformed
- * `API_KEYS` value would otherwise turn into an unrecoverable 500 on every
- * api-key-gated route (see `docs/runbook-api-keys.md`, failure mode 5). This
- * module therefore exposes two layers:
+ * - Public exports and their signatures are stable.
+ * - Absent, empty or whitespace-only `API_KEYS` yields an empty registry (auth stays optional).
+ * - Empty chunks between `;` are skipped; the `[index]` in error messages counts non-empty chunks only.
+ * - Entries are validated in a fixed order: object shape, unknown fields, key, clientId, scopes, revoked.
+ *   The first failing check throws; nothing is partially registered.
+ * - `key` and `clientId` are trimmed before storage. `revoked` defaults to `false`.
+ * - Duplicate `key` values are rejected; revoked keys stay in the registry (rejected at auth time).
+ * - The registry is rebuilt on every call (no module-level cache), so a retry is deterministic.
+ * - Because entries are split on `;`, a `;` inside a JSON string value fails closed with a parse error.
  *
- *  1. **Strict layer** — {@link parseApiKeys}, {@link validateEntry} and
- *     {@link buildKeyRegistry} throw a typed {@link ApiKeyConfigError} carrying
- *     a stable {@link API_KEY_CONFIG_ERROR_CODES} code, the offending entry
- *     index, and a `retryable` verdict. Behavior is unchanged for existing
- *     callers: they still throw, they just get a classifiable error.
- *  2. **Recovery layer** — {@link tryLoadApiKeyRegistry} never throws. It
- *     retries only errors classified as transient, then resolves a safe,
- *     deterministic fallback state and emits a structured (non-leaking) log
- *     line describing what happened.
+ * ## Secrecy contract
  *
- * The recovery layer is deterministic by construction:
- *
- *  - **Bounded, classification-driven retries.** Retries happen only for
- *    errors flagged `retryable` (today: a transient OS-level failure while
- *    reading the environment source). A malformed config is never retried —
- *    retrying a deterministic failure only delays the same outcome.
- *  - **No jitter.** The default retry delay is `0`, so the same input always
- *    produces the same number of attempts in the same order. Callers that want
- *    a backoff pass both `retryDelayMs` and an injectable `sleep`.
- *  - **Fail-closed default.** The default fallback is an empty registry, which
- *    makes every key lookup miss (HTTP 401) rather than authenticate. A
- *    half-loaded registry must never be able to grant access.
- *  - **Opt-in last-known-good.** `fallback: 'last_known_good'` serves the most
- *    recent fully validated registry instead. This is a deliberate trade:
- *    it keeps a transient read failure from logging every service out, at the
- *    cost of honouring slightly stale key material after a bad redeploy.
- *
- * ## Security
- *
- * No log line, thrown message, or telemetry field produced by this module ever
- * contains key material. `JSON.parse` failures are passed through
- * {@link sanitizeParserMessage} because modern V8 embeds a verbatim excerpt of
- * the offending input in its parse errors (e.g.
- * `Unexpected token 'l', "lf_realkey" is not valid JSON`); the raw excerpt is
- * discarded before the message is used. Entries are frozen on the way out so a
- * caller cannot mutate a shared registry, and registries are stored in `Map`s
- * so prototype-pollution keys such as `__proto__` cannot escape the entry.
+ * Error messages never contain a key value. JSON parser messages are deliberately
+ * not forwarded, because they can echo a snippet of the raw input (i.e. the key).
  *
  * @module config/apiKeys
  */
@@ -66,15 +38,16 @@ const API_KEY_PREFIX = 'lf_';
  * All scopes recognised by the system.
  * @type {string[]}
  */
-const VALID_SCOPES = [
+const VALID_SCOPES = Object.freeze([
   'invoices:read',
   'invoices:write',
   'escrow:read',
   'admin',
-];
+]);
 
 /**
- * The minimum required length of the full API key (prefix included).
+ * The minimum required length of the full API key (prefix included),
+ * measured after trimming surrounding whitespace.
  * @type {number}
  */
 const MIN_KEY_LENGTH = 10;
@@ -194,7 +167,10 @@ const RETRYABLE_OS_ERROR_CODES = new Set([
  * treated as an unknown / unsupported key.
  * @type {Set<string>}
  */
-const KNOWN_ENTRY_FIELDS = new Set(['key', 'clientId', 'scopes', 'revoked']);
+const KNOWN_ENTRY_FIELD_NAMES = Object.freeze(['key', 'clientId', 'scopes', 'revoked']);
+const KNOWN_ENTRY_FIELD_SET = new Set(KNOWN_ENTRY_FIELD_NAMES);
+// Keep the historical Set export, but do not let callers mutate validation.
+const KNOWN_ENTRY_FIELDS = new Set(KNOWN_ENTRY_FIELD_NAMES);
 
 /**
  * @typedef {Object} ApiKeyEntry
@@ -408,7 +384,9 @@ function logApiKeyConfigFailure(verdict, context) {
  * @throws {ApiKeyConfigError} When any unknown field is present.
  */
 function rejectUnknownFields(entry, index) {
-  const extraKeys = Object.keys(entry).filter((k) => !KNOWN_ENTRY_FIELDS.has(k));
+  const extraKeys = Object.keys(entry).filter(
+    (k) => !KNOWN_ENTRY_FIELD_SET.has(k)
+  );
   if (extraKeys.length > 0) {
     throw entryError(
       `unknown field(s) "${extraKeys.join('", "')}" — only "key", "clientId", "scopes", and "revoked" are supported`,
@@ -453,8 +431,13 @@ function validateEntry(entry, index) {
     throw entryError(`"key" must start with "${API_KEY_PREFIX}"`, index);
   }
 
-  if (normalizedKey.length < MIN_KEY_LENGTH) {
-    throw entryError(`"key" must be at least ${MIN_KEY_LENGTH} characters long`, index);
+  // Invariant: the stored (trimmed) key must meet the minimum length, so the
+  // check is made on the trimmed value. Otherwise whitespace padding could
+  // smuggle in a key shorter than MIN_KEY_LENGTH.
+  if (key.trim().length < MIN_KEY_LENGTH) {
+    throw new Error(
+      `API_KEYS[${index}]: "key" must be at least ${MIN_KEY_LENGTH} characters long`
+    );
   }
 
   if (normalizedKey.length > MAX_KEY_LENGTH) {
@@ -583,28 +566,20 @@ function parseApiKeys(raw) {
   const chunks = raw
     .split(';')
     .map((chunk) => chunk.trim())
-    .filter(Boolean);
-
-  if (chunks.length > MAX_ENTRIES_COUNT) {
-    throw new ApiKeyConfigError(
-      `API_KEYS: must not exceed ${MAX_ENTRIES_COUNT} entries`,
-      { code: API_KEY_CONFIG_ERROR_CODES.TOO_MANY_ENTRIES },
-    );
-  }
-
-  return chunks.map((chunk, index) => {
-    let parsed;
-    try {
-      parsed = JSON.parse(chunk);
-    } catch (err) {
-      throw entryError(
-        `failed to parse JSON — ${sanitizeParserMessage(err instanceof Error ? err.message : err)}`,
-        index,
-        API_KEY_CONFIG_ERROR_CODES.JSON_PARSE_FAILED,
-      );
-    }
-    return validateEntry(parsed, index);
-  });
+    .filter(Boolean)
+    .map((chunk, index) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(chunk);
+      } catch (_err) {
+        // Do NOT forward _err.message: V8 parser errors can echo a snippet of
+        // the input, which here contains the raw API key.
+        throw new Error(
+          `API_KEYS[${index}]: failed to parse JSON — entry is not valid JSON (parser details withheld to avoid exposing key material)`
+        );
+      }
+      return validateEntry(parsed, index);
+    });
 }
 
 /**
@@ -617,18 +592,25 @@ function parseApiKeys(raw) {
  */
 function buildKeyRegistry(entries) {
   if (!Array.isArray(entries)) {
-    throw new ApiKeyConfigError('API_KEYS: entries must be an array', {
-      code: API_KEY_CONFIG_ERROR_CODES.ENTRIES_NOT_ARRAY,
-    });
+    throw new Error('API_KEYS: entries must be an array');
   }
 
   const registry = new Map();
 
-  entries.forEach((entry) => {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw new ApiKeyConfigError('API_KEYS: every entry must be an object', {
-        code: API_KEY_CONFIG_ERROR_CODES.ENTRY_NOT_OBJECT,
-      });
+  // Validate and normalize every input, even for callers that bypass parsing.
+  // The local map is returned only after all entries pass validation.
+  for (const [index, candidate] of entries.entries()) {
+    const validated = validateEntry(candidate, index);
+    // The registry owns an immutable snapshot; caller-owned objects and arrays
+    // cannot later change key identity, client metadata, revocation, or scopes.
+    const entry = Object.freeze({
+      ...validated,
+      scopes: Object.freeze([...validated.scopes]),
+    });
+    if (registry.has(entry.key)) {
+      throw new Error(
+        `API_KEYS: duplicate key detected for clientId "${entry.clientId}"`
+      );
     }
 
     if (registry.has(entry.key)) {
@@ -842,10 +824,4 @@ module.exports = {
   readApiKeysEnv,
   validateEntry,
   rejectUnknownFields,
-  classifyApiKeyConfigError,
-  isRetryableApiKeyConfigError,
-  toApiKeyConfigError,
-  sanitizeParserMessage,
-  getLastKnownGoodEntryCount,
-  resetApiKeyRecoveryState,
 };

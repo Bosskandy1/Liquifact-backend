@@ -8,6 +8,55 @@ const _hasOwn = Object.prototype.hasOwnProperty;
 const _hasOwnProp = (obj, key) => _hasOwn.call(obj, key);
 
 /**
+ * Minimum valid HTTP status code accepted by the mapper.
+ * @type {number}
+ */
+const MIN_STATUS = 100;
+
+/**
+ * Maximum valid HTTP status code accepted by the mapper.
+ * @type {number}
+ */
+const MAX_STATUS = 599;
+
+/**
+ * Fallback status used when an error exposes an invalid status.
+ * @type {number}
+ */
+const FALLBACK_STATUS = 500;
+
+/**
+ * Maximum length of a client-visible message. Truncated to avoid
+ * unbounded response sizes and accidental data leaks.
+ * @type {number}
+ */
+const MAX_MESSAGE_LENGTH = 500;
+
+/**
+ * Maximum length of a retry hint string.
+ * @type {number}
+ */
+const MAX_RETRY_HINT_LENGTH = 200;
+
+/**
+ * Maximum length of an error code label.
+ * @type {number}
+ */
+const MAX_CODE_LENGTH = 100;
+
+/**
+ * Maximum length of an error type URI.
+ * @type {number}
+ */
+const MAX_TYPE_LENGTH = 500;
+
+/**
+ * Statuses that are considered safe to retry by default.
+ * @type {ReadonlyArray<number>}
+ */
+const RETRYABLE_STATUSES = Object.freeze([429, 503]);
+
+/**
  * Default error code label from HTTP status when AppError has no explicit code.
  *
  * @param {number} status - HTTP status.
@@ -43,6 +92,10 @@ function httpStatusToCode(status) {
   }
   return `HTTP_${status}`;
 }
+
+const INTERNAL_ERROR_MESSAGE = "An internal server error occurred.";
+const DEFAULT_RETRY_HINT =
+  "Do not retry until the issue is resolved or support is contacted.";
 
 /**
  * Normalize an AppError-like value into the stable error contract.
@@ -173,10 +226,7 @@ function mapError(error) {
     code: httpStatusToCode(status),
     message,
     retryable,
-    retryHint,
-    isCorsOriginRejected,
-    type,
-    details,
+    retryHint: defaultRetryHint(status),
   };
 }
 
@@ -332,14 +382,11 @@ function _isBodyParserSyntaxError(snapshot) {
  * @returns {boolean}
  */
 function isBodyParserSyntaxError(error) {
-  if (error === null || typeof error !== 'object') {
-    return false;
-  }
-  // Intentionally allow inherited `type` here (SyntaxError subclass may put
-  // it on the instance) but guard against getter exceptions.
-  const type = _safeProp(error, 'type', /* allowInherited */ true);
-  const status = _safeProp(error, 'status', true);
-  return type === 'entity.parse.failed' && status === 400;
+  return Boolean(
+    isPlainObject(error) &&
+      error.type === "entity.parse.failed" &&
+      error.status === 400,
+  );
 }
 
 module.exports = {
