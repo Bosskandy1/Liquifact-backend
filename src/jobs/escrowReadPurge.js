@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /**
  * @fileoverview Maintenance task that hard-deletes escrow-read records whose
@@ -6,7 +6,7 @@
  *
  * Soft-deleting a record (see {@link module:services/escrowReadSoftDelete})
  * leaves a tombstoned `escrow_event_projection` row behind. Without a purge,
- * tombstones accumulate forever — the exact unbounded-growth problem the
+ * tombstones accumulate forever the exact unbounded-growth problem the
  * idempotency purge job solves for `idempotency_keys`.
  *
  * This job runs the purge on a schedule through the shared job queue/worker
@@ -87,10 +87,10 @@
  * - Repeated startPurgeWorker() calls do not create duplicate workers
  *
  * ## Configuration
- * - `ESCROW_READ_SOFT_DELETE_RETENTION_DAYS` — restore/retention window (default 30).
- * - `ESCROW_READ_PURGE_BATCH_SIZE` — rows deleted per batch (default 500).
- * - `ESCROW_READ_PURGE_MAX_BATCHES` — batch cap per run (default 100).
- * - `ESCROW_READ_PURGE_INTERVAL_MS` — cadence between runs (default 6 h, min 1 min).
+ * - `ESCROW_READ_SOFT_DELETE_RETENTION_DAYS` -- restore/retention window (default 30).
+ * - `ESCROW_READ_PURGE_BATCH_SIZE` -- rows deleted per batch (default 500).
+ * - `ESCROW_READ_PURGE_MAX_BATCHES` -- batch cap per run (default 100).
+ * - `ESCROW_READ_PURGE_INTERVAL_MS` -- cadence between runs (default 6 h, min 1 min).
  *
  * @module jobs/escrowReadPurge
  */
@@ -109,14 +109,72 @@ const {
 
 /** @constant {string} */
 const JOB_TYPE = 'escrow_read_purge';
-/** @constant {number} */
-const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-/** @constant {number} */
+
+/** @constant {number} Default purge cadence: 6 hours. */
+const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Minimum allowed purge interval.
+ *
+ * Values below this floor would schedule the job so aggressively that the
+ * worker could starve normal request traffic.
+ *
+ * @constant {number}
+ */
 const MIN_INTERVAL_MS = 60_000; // 1 minute
+/** @constant {number} */
+const DEFAULT_MAX_RETRIES = 3;
+/** @constant {number} */
+const BASE_RETRY_DELAY_MS = 250;
+/** @constant {number} */
+const MAX_RETRY_DELAY_MS = 30_000;
+
+/**
+ * Maximum allowed purge interval.
+ *
+ * Values above this ceiling would silently stall the purge: tombstones could
+ * grow unbounded for days before the job fires. Seven days is chosen as the
+ * outer safe bound — well beyond any reasonable maintenance window — so a
+ * misconfigured large value is rejected rather than accepted silently.
+ *
+ * @constant {number}
+ */
+const MAX_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/**
+ * Maximum allowed `delayMs` accepted by {@link schedulePurge}.
+ *
+ * Mirrors `MAX_INTERVAL_MS` so a scheduled delay cannot exceed one full purge
+ * cycle. Values above this are clamped rather than rejected so callers can
+ * pass `getIntervalMs()` directly without a separate guard.
+ *
+ * @constant {number}
+ */
+const MAX_DELAY_MS = MAX_INTERVAL_MS;
+
+/**
+ * Maximum rows the service layer accepts per batch (`MAX_PURGE_BATCH_SIZE` in
+ * {@link module:services/escrowReadSoftDelete}). Duplicated here so the job
+ * layer can clamp injected `batchSize` values without importing internal
+ * service constants.
+ *
+ * @constant {number}
+ */
+const MAX_BATCH_SIZE = 10000;
+
+/**
+ * Maximum batch count the service layer accepts per run
+ * (`MAX_PURGE_MAX_BATCHES` in {@link module:services/escrowReadSoftDelete}).
+ * Duplicated here so the job layer can clamp injected `maxBatches` values
+ * without importing internal service constants.
+ *
+ * @constant {number}
+ */
+const MAX_MAX_BATCHES = 1000;
 
 /**
  * Registers a counter idempotently. Jest resets the module registry between
- * suites while `prom-client`'s registry is process-global, so a bare
+ * suites while `prom-client 's registry is process-global, so a bare
  * `new Counter(...)` would throw "already registered" on the second load.
  *
  * @param {object} config - `prom-client` counter configuration.
@@ -142,6 +200,37 @@ const escrowReadPurgeRunsTotal = _counter({
   labelNames: ['status'],
 });
 
+const escrowReadPurgeRetriesTotal = _counter({
+  name: 'liquifact_escrow_read_purge_retries_total',
+  help: 'Total escrow-read purge retry attempts',
+});
+
+const escrowReadPurgeRowsDeletedOnRetryTotal = _counter({
+  name: 'liquifact_escrow_read_purge_rows_deleted_on_retry_total',
+  help: 'Total escrow-read tombstones deleted by retried runs',
+});
+
+/**
+ * Incremented whenever a run hits the batch cap, signalling that tombstones
+ * remain and the next scheduled run will continue the work.
+ */
+const escrowReadPurgeMaxBatchesTotal = _counter({
+  name: 'liquifact_escrow_read_purge_max_batches_reached_total',
+  help: 'Number of purge runs that were capped by maxBatches (backlog present)',
+});
+
+/**
+ * Single-flight guard -- true while a purge run is executing.
+ *
+ * Invariant: only one call to `purgeExpiredSoftDeletes` may be active at any
+ * time. The worker already serialises via `maxConcurrency: 1`, but this flag
+ * provides an explicit, testable safety net against re-entrant or out-of-band
+ * calls (e.g. concurrent admin triggers processed by two worker instances).
+ *
+ * @type {boolean}
+ */
+let _purgeInFlight = false;
+
 /**
  * Reads the purge cadence from environment with validation and safe defaults.
  *
@@ -157,7 +246,17 @@ const escrowReadPurgeRunsTotal = _counter({
  * - Changing these values is backward-compatible
  * - Changing the clamping logic requires migration notice
  *
- * @returns {number} Interval in ms (minimum 60000; default 6 h).
+ * Clamping is applied in both directions:
+ * - Values below `MIN_INTERVAL_MS` (< 1 min) would schedule the job so
+ *   aggressively that it could starve normal traffic.
+ * - Values above `MAX_INTERVAL_MS` (> 7 days) would silently stall the purge,
+ *   allowing tombstones to accumulate beyond their intended retention window.
+ *
+ * Non-numeric, non-finite, and non-integer inputs (e.g. floats, `"abc"`,
+ * `Infinity`) all fall back to the safe default.
+ *
+ * @returns {number} Interval in ms, clamped to
+ *   [`MIN_INTERVAL_MS`, `MAX_INTERVAL_MS`]; default 6 h.
  */
 function getIntervalMs() {
   const rawValue = process.env.ESCROW_READ_PURGE_INTERVAL_MS;
@@ -174,6 +273,75 @@ function getIntervalMs() {
   }
 
   return parsed;
+}
+
+/**
+ * Computes a deterministic exponential backoff delay for a retry attempt.
+ *
+ * @param {number} attempt - 1-based retry attempt number.
+ * @returns {number} Delay in ms, capped at 30 s.
+ */
+function getRetryDelayMs(attempt) {
+  const delay = BASE_RETRY_DELAY_MS * 2 ** (Math.max(1, attempt) - 1);
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
+}
+
+/**
+ * Sleeps for the given duration. Exposed for testability via the options
+ * bag so tests can inject a no-op sleep.
+ *
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+function _sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** In-process mutex guard for the purge handler. */
+let purgeInFlight = null;
+
+/**
+ * Resets the in-flight guard. Test-only hook to keep suites isolated.
+ *
+ * @returns {void}
+ */
+function _resetInFlight() {
+  purgeInFlight = null;
+}
+
+/**
+ * Runs a single purge attempt with metrics and structured logging.
+ *
+ * @param {object} job
+ * @param {object} options
+ * @param {number} attempt
+ * @returns {Promise<object>}
+ */
+async function _attemptPurge(job, options, attempt) {
+  const startedAt = Date.now();
+  const summary = await purgeExpiredSoftDeletes(options);
+
+  escrowReadPurgeRowsDeletedTotal.inc(summary.purged);
+  if (attempt > 1) {
+    escrowReadPurgeRowsDeletedOnRetryTotal.inc(summary.purged);
+  }
+  escrowReadPurgeRunsTotal.inc({ status: 'success' });
+
+  logger.info(
+    {
+      jobId: job.id,
+      attempt,
+      purged: summary.purged,
+      batches: summary.batches,
+      cutoff: summary.cutoff,
+      retentionDays: summary.retentionDays,
+      maxBatchesReached: summary.maxBatchesReached,
+      durationMs: Date.now() - startedAt,
+    },
+    'escrowReadPurge: run completed'
+  );
+
+  return { success: true, attempts: attempt, ...summary };
 }
 
 /**
@@ -215,12 +383,22 @@ function getIntervalMs() {
  * @param {object} [job={}] - Job envelope from the queue (`id` used for logs).
  * @param {object} [options={}] - Forwarded to
  *   {@link module:services/escrowReadSoftDelete.purgeExpiredSoftDeletes}
- *   (`dbClient`, `now`, `batchSize`, `maxBatches`) — used by tests.
+ *   (`dbClient`, `now`, `batchSize`, `maxBatches`) -- used by tests.
  * @returns {Promise<object>} Purge summary plus `success: true`.
- * @throws {Error} Re-throws the underlying failure after recording metrics so
- *   the worker's retry policy applies.
+ * @throws {Error} Re-throws the underlying failure after recording metrics and
+ *   exhausting retries so the worker's retry policy applies.
  */
 async function runEscrowReadPurge(job = {}, options = {}) {
+  // Invariant: no concurrent purge runs.
+  if (_purgeInFlight) {
+    logger.warn(
+      { jobId: job.id },
+      'escrowReadPurge: run skipped -- previous run still in-flight'
+    );
+    return { success: false, skipped: true };
+  }
+
+  _purgeInFlight = true;
   const startedAt = Date.now();
 
   try {
@@ -235,7 +413,7 @@ async function runEscrowReadPurge(job = {}, options = {}) {
     // Log success with full context for observability
     logger.info(
       {
-        jobId: job.id,
+        jobId: safeJob.id,
         purged: summary.purged,
         batches: summary.batches,
         cutoff: summary.cutoff,
@@ -254,12 +432,22 @@ async function runEscrowReadPurge(job = {}, options = {}) {
 
     // Log failure with error context (no sensitive data)
     logger.error(
-      { jobId: job.id, err: error.message, durationMs: Date.now() - startedAt },
+      {
+        jobId: job.id,
+        err: error.message,
+        stack: error.stack,
+        durationMs: Date.now() - startedAt,
+      },
       'escrowReadPurge: run failed'
     );
 
     // Re-throw so worker retry policy applies
     throw error;
+  } finally {
+    // Always release the guard and re-schedule, regardless of outcome.
+    _purgeInFlight = false;
+    // Invariant: purge cadence is self-sustaining -- reschedule after every run.
+    schedulePurge();
   }
 }
 
@@ -296,7 +484,7 @@ purgeWorker.registerHandler(JOB_TYPE, (job) => runEscrowReadPurge(job));
  *
  * @param {object} [options={}]
  * @param {number} [options.delayMs=getIntervalMs()] - Delay before execution.
- * @returns {string} Job ID.
+ * @returns {string|null} Job ID, or `null` if a pending job already existed.
  */
 function schedulePurge(options = {}) {
   // Extract delayMs with default fallback
@@ -457,7 +645,7 @@ function triggerPurge() {
  * - Removing fields is breaking
  * - Frozen return prevents accidental mutation
  *
- * @returns {object} `{ worker, queue, config }`.
+ * @returns {object} `{ worker, queue, config }`
  */
 function getStats() {
   const stats = {
@@ -468,6 +656,7 @@ function getStats() {
       batchSize: getPurgeBatchSize(),
       maxBatches: getPurgeMaxBatches(),
       intervalMs: getIntervalMs(),
+      maxRetries: getMaxRetries(),
     },
   };
 
@@ -479,7 +668,7 @@ function getStats() {
 }
 
 module.exports = {
-  JOB_TYPE,
+  JOB_TYPE, 
   runEscrowReadPurge,
   schedulePurge,
   startPurgeWorker,
@@ -487,6 +676,11 @@ module.exports = {
   triggerPurge,
   getStats,
   getIntervalMs,
+  getMaxRetries,
+  getRetryDelayMs,
+  _resetInFlight,
   purgeQueue,
   purgeWorker,
+  // Exported for test introspection only -- do not depend on this in production code.
+  get _purgeInFlight() { return _purgeInFlight; },
 };
