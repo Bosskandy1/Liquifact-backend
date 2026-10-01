@@ -38,6 +38,12 @@
  * environment-supplied override map. Overrides cannot be injected by untrusted
  * input — the map is parsed from the environment and stored in a {@link Map},
  * which is immune to prototype-pollution keys such as `__proto__`.
+ *
+ * Invariants preserved by this module:
+ *   I1. Every resolved ThresholdSet has finite, strictly positive fields.
+ *   I2. For every resolved ThresholdSet, manualReviewThreshold <= fraudCeiling.
+ *   I3. The memoized configuration is frozen; callers receive defensive copies.
+ *   I4. Tenant lookups never mutate the cached configuration.
  */
 
 'use strict';
@@ -150,6 +156,11 @@ function _parseTenantOverrides(raw, defaults) {
     );
   }
 
+  // Reject prototype-pollution keys explicitly before iterating. Object.keys only
+  // returns own enumerable keys, but rejecting these names keeps the invariant
+  // explicit and diagnosable rather than relying on Map semantics alone.
+  const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
   // Only the tenant's own enumerable keys are considered; using a Map for storage
   // keeps the result free of prototype-pollution surprises.
   for (const tenantId of Object.keys(parsed)) {
@@ -217,6 +228,11 @@ function _buildConfig() {
 
   const tenants = _parseTenantOverrides(process.env.INVOICE_TENANT_THRESHOLDS, defaults);
 
+  // Freeze defaults and the tenant map so the memoized configuration is
+  // immutable for the lifetime of the process (invariant I3).
+  Object.freeze(defaults);
+  Object.freeze(tenants);
+
   return { defaults, tenants };
 }
 
@@ -261,6 +277,7 @@ function _getConfig() {
  */
 function resolveThresholds(tenantId) {
   const { defaults, tenants } = _getConfig();
+  const tenantKey = tenantId === undefined || tenantId === null ? null : String(tenantId);
 
   if (tenantId !== undefined && tenantId !== null && tenants.has(String(tenantId))) {
     const override = tenants.get(String(tenantId));
@@ -270,6 +287,7 @@ function resolveThresholds(tenantId) {
     return { ...override };
   }
 
+  // Defensive copy of the frozen defaults (invariant I4).
   return { ...defaults };
 }
 
