@@ -312,136 +312,44 @@ class AppError extends Error {
   /**
    * Creates a new AppError instance.
    *
-   * All fields have safe defaults; passing `null`, `undefined`, or a partial
-   * object will never throw.
-   *
-   * @param {object|null|undefined} params
-   * @param {string}  [params.type]       - RFC 7807 problem type URI.  Derived
-   *   from `status` when omitted.
-   * @param {string}  [params.title]      - Short human-readable summary.
-   *   Derived from `status` when omitted.
-   * @param {number}  [params.status=500] - HTTP status code.  Values outside
-   *   [100, 599] are clamped to 500.
-   * @param {string}  [params.detail]     - Human-readable occurrence detail.
-   * @param {string}  [params.instance]   - URI identifying this occurrence.
-   * @param {string}  [params.code]       - Machine-readable error code.
-   * @param {boolean} [params.retryable=false] - Whether the caller may retry.
-   * @param {string}  [params.retryHint='']    - Safe retry guidance.
-   * @param {Array}   [params.fieldErrors]     - Field-level validation errors.
-   * @param {unknown} [params.context]         - Internal tracing context (never
-   *   serialized to JSON or HTTP responses).
+   * @param {Object} params
+   * @param {string} params.type - A URI reference [RF3986] that identifies the problem type.
+   * @param {string} params.title - A short, human-readable summary of the problem type.
+   * @param {number} params.status - The HTTP status code (e.g., 400, 404, 500).
+   * @param {string} params.detail - A human-readable explanation specific to this occurrence of the problem.
+   * @param {string} [params.instance] - A URI reference that identifies the specific occurrence of the problem.
+   * @param {string} [params.code] - A machine-readable error code.
+   * @param {boolean} [params.retryable] - Whether the operation may be retried.
+   * @param {string} [params.retryHint] - Human-readable retry guidance.
+   * @param {Object} [params.context] - Optional context metadata.
+   * @param {Array|Object} [params.fieldErrors] - Optional field-level validation errors.
+   * @returns {AppError}
    */
   constructor(params) {
-    // Guard: treat null/undefined params as an empty object so every path
-    // below has a defined object to work with.
-    const safeParams = (params !== null && typeof params === 'object') ? params : {};
-
-    // --- 1. Coerce / default all scalar fields deterministically -----------
-
-    const status = coerceStatus(safeParams.status);
-
-    // Derive title: explicit param → standard title from status → generic
-    const title = coerceString(
-      safeParams.title,
-      getStandardTitle(status),
-    );
-
-    // Derive type: explicit param → status-based URI (never "about:blank" for
-    // known statuses because that provides no actionable information)
-    const type = coerceString(
-      safeParams.type,
-      getProblemType(status),
-    );
-
-    const detail = typeof safeParams.detail === 'string'
-      ? safeParams.detail
-      : undefined;
-
-    const instance = typeof safeParams.instance === 'string'
-      ? safeParams.instance
-      : undefined;
-
-    const code = typeof safeParams.code === 'string' && safeParams.code.trim()
-      ? safeParams.code.trim()
-      : undefined;
-
-    // retryable: always a boolean, defaulting to false for non-transient codes
-    const retryable = coerceBool(safeParams.retryable, false);
-
-    // retryHint: always a string (may be empty), never undefined
-    const retryHint = typeof safeParams.retryHint === 'string'
-      ? safeParams.retryHint
-      : '';
-
-    // fieldErrors: only if it is an actual array; never coerced from other types
-    const fieldErrors = Array.isArray(safeParams.fieldErrors)
-      ? safeParams.fieldErrors
-      : undefined;
-
-    // context: internal only, never serialized
-    const context = Object.prototype.hasOwnProperty.call(safeParams, 'context')
-      ? safeParams.context
-      : null;
-
-    // --- 2. Initialize Error base -------------------------------------------
-    // Use `title` so `error.message` is always a meaningful, non-empty string
-    // rather than the literal "undefined" that `super(undefined)` would produce.
+    const safeParams = params && typeof params === 'object' ? params : {};
+    const { title, context } = safeParams;
     super(title);
     this.name = 'AppError';
 
-    // --- 3. Assign instance fields ------------------------------------------
-    this.type = type;
-    this.title = title;
-    this.status = status;
-
-    if (detail !== undefined) {
-      this.detail = detail;
-    }
-    if (instance !== undefined) {
-      this.instance = instance;
-    }
-    if (code !== undefined) {
-      this.code = code;
-    }
-
-    // Always assign retryable and retryHint as concrete values so callers
-    // never need to null-check them.
-    this.retryable = retryable;
-    this.retryHint = retryHint;
-
-    if (fieldErrors !== undefined) {
-      this.fieldErrors = fieldErrors;
-    }
-
-    // context is intentionally last and excluded from toJSON / toHTTPResponse
-    this.context = context;
-
-    // Capture stack trace, omitting this constructor frame.
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-
-    // --- 4. Sync with canonical problem-details builder ---------------------
-    // We call formatProblemDetails after field assignment so that the builder
-    // can still apply any additional defaulting logic (e.g. stack omission in
-    // production).  Any field already set above is passed explicitly so the
-    // builder never overrides our coerced values.
-    formatProblemDetails({
-      type,
-      title,
-      status,
-      detail,
-      instance,
-      code,
-      retryable,
-      retryHint,
-      stack: undefined, // never pass stack into formatProblemDetails
+    // Delegate to canonical builder for ALL field assembly/defaulting
+    const problem = formatProblemDetails({
+      ...safeParams,
+      stack: undefined,
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Serialization helpers
-  // ---------------------------------------------------------------------------
+    this.type = problem.type;
+    this.title = problem.title;
+    this.status = problem.status;
+    this.detail = problem.detail;
+    this.instance = problem.instance;
+    this.code = problem.code;
+    this.retryable = problem.retryable;
+    this.retryHint = problem.retry_hint;
+    this.fieldErrors = Object.prototype.hasOwnProperty.call(safeParams, 'fieldErrors')
+      ? safeParams.fieldErrors
+      : undefined;
+    this.context = context || null;
 
   /**
    * Returns a plain RFC 7807 problem-details object suitable for JSON
@@ -663,33 +571,4 @@ Object.defineProperty(AppError, 'FENCING_TOKEN_REJECTED', {
   configurable: false,
 });
 
-// ---------------------------------------------------------------------------
-// Module-private helpers (exported for mapError / errorHandler reuse)
-// ---------------------------------------------------------------------------
-
-/**
- * Derive a stable error code from an HTTP status code.
- *
- * @param {number} status
- * @returns {string}
- * @private
- */
-function _httpStatusToCode(status) {
-  const MAP = {
-    400: 'BAD_REQUEST',
-    401: 'UNAUTHORIZED',
-    403: 'FORBIDDEN',
-    404: 'NOT_FOUND',
-    409: 'CONFLICT',
-    422: 'UNPROCESSABLE_ENTITY',
-    429: 'TOO_MANY_REQUESTS',
-    500: 'INTERNAL_SERVER_ERROR',
-    502: 'BAD_GATEWAY',
-    503: 'SERVICE_UNAVAILABLE',
-    504: 'GATEWAY_TIMEOUT',
-  };
-  return MAP[status] || `HTTP_${status}`;
-}
-
 module.exports = AppError;
-module.exports.AppError = AppError;
