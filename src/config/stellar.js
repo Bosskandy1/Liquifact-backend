@@ -1,68 +1,84 @@
 'use strict';
 
 /**
- * Stellar/Soroban network configuration with deterministic, fail-fast validation.
+ * @fileoverview Stellar network configuration accessor with explicit boundary
+ * contract preservation.
  *
- * The network passphrase is the *identity* of the chain and the RPC URL is the
- * *transport*. Pairing the two wrongly (for example a TESTNET passphrase with a
- * MAINNET endpoint) does not fail loudly on-chain: the Soroban RPC answers
- * normally and the failure only surfaces when a transaction is rejected or, worse,
- * when it is signed against the wrong network identity. This module therefore
- * treats a network/RPC/passphrase disagreement as a hard, deterministic error
- * instead of a warning.
+ * Public contract invariants:
+ * - getStellarConfig() always returns { rpcUrl: string, networkPassphrase: string }
+ * - Both fields are non-null strings derived from validated config
+ * - Throws Error with clear message if config.get() fails (not validated)
+ * - Return shape is stable across upgrades; new fields require version bump
+ * - No side effects; safe for concurrent calls and repeated invocation
  *
- * Invariants enforced here:
- *
- * 1. **Canonical matrix only.** A network is one of {@link VALID_NETWORKS}, and its
- *    RPC endpoint must be exactly the canonical URL for that network. Custom or
- *    downgraded (`http://`) endpoints are rejected by {@link validateStellarConfig}.
- * 2. **No plaintext downgrade.** Only `https://` endpoints match the canonical matrix,
- *    so a typo cannot silently downgrade RPC traffic to plaintext.
- * 3. **No credential echo.** RPC URLs may embed `user:password@host` userinfo.
- *    Every value placed in an error message, `details` payload or log line is redacted
- *    first, so configuration failures are diagnosable without leaking secrets.
- * 4. **Side-effect free and re-runnable.** Neither validator mutates module state,
- *    `process.env`, or the validated config store. A rejected validation therefore
- *    leaves nothing half-initialised: correcting the environment and calling again
- *    deterministically succeeds, and the same input always yields the same result
- *    (or the same error). This holds under retries and concurrent calls because no
- *    result is memoised and no shared state is written.
- * 5. **Machine-readable failures.** Every throw is a {@link StellarConfigError} with a
- *    stable `code`, so callers and log pipelines can branch on the failure class
- *    instead of matching on human-readable message text.
- *
- * Two accessors read the same canonical matrix, which is what makes the recovery
- * story safe:
- *
- * - {@link validateStellarConfig} — boot-time gate. Reads `STELLAR_NETWORK` and
- *   `SOROBAN_RPC_URL` straight from the environment and enforces the strict matrix.
- * - {@link getStellarConfig} — request-time accessor for Soroban services. Reads the
- *   Zod-validated store in {@link module:config/index}, which has no passphrase/RPC
- *   pairing check of its own, and proves the resolved pair is self-consistent before
- *   returning it.
+ * Failure modes:
+ * - Config not validated → Error('Config not validated. Call validate() first.')
+ * - Missing SOROBAN_RPC_URL → config validation rejects at boot (has default)
+ * - Missing NETWORK_PASSPHRASE → config validation rejects at boot (has default)
+ * - Invalid types → config validation enforces string/url types at boot
  *
  * @module config/stellar
  */
 
 const config = require('./index');
 
-const NETWORK_RPC_MAP = Object.freeze({
-  TESTNET: 'https://soroban-testnet.stellar.org',
-  MAINNET: 'https://soroban.stellar.org',
-  FUTURENET: 'https://rpc-futurenet.stellar.org',
-});
+/**
+ * @typedef {Object} StellarConfig
+ * @property {string} rpcUrl - Soroban RPC endpoint URL (validated at boot).
+ * @property {string} networkPassphrase - Stellar network passphrase.
+ */
 
-const NETWORK_PASSPHRASE_MAP = Object.freeze({
-  TESTNET: 'Test SDF Network ; September 2015',
-  MAINNET: 'Public Global Stellar Network ; September 2014',
-  FUTURENET: 'Test SDF Future Network ; October 2022',
-});
+/**
+ * Get Stellar-specific configuration.
+ *
+ * Boundary contract:
+ * - Returns a plain object with exactly two string properties: rpcUrl and networkPassphrase
+ * - Both values are guaranteed non-empty strings validated at application boot
+ * - Throws Error if config.get() hasn't been called (fail-fast on misconfiguration)
+ * - Idempotent: repeated calls return equivalent objects with the same values
+ * - Thread-safe: no mutable state, safe for concurrent access
+ *
+ * Compatibility notes:
+ * - Return shape { rpcUrl, networkPassphrase } is the public contract
+ * - Adding optional fields is backward-compatible; removing/renaming is breaking
+ * - Callers must handle Error thrown when config is not validated
+ * - Field values come from config module defaults if env vars are absent
+ *
+ * @returns {StellarConfig} Stellar configuration with validated rpcUrl and networkPassphrase.
+ * @throws {Error} When config.validate() has not been called prior to invocation.
+ */
+function getStellarConfig() {
+  // config.get() enforces that validate() was called; throws if not.
+  // This is the primary fail-fast boundary: misconfigured apps crash early.
+  const validatedConfig = config.get();
 
-const VALID_NETWORKS = Object.freeze(Object.keys(NETWORK_RPC_MAP));
+  // SOROBAN_RPC_URL and NETWORK_PASSPHRASE are guaranteed by ConfigSchema:
+  // - SOROBAN_RPC_URL: z.string().url().default('https://soroban-testnet.stellar.org')
+  // - NETWORK_PASSPHRASE: z.string().default('Test SDF Network ; September 2015')
+  // Both have defaults, so they are always present and type-validated.
+  const rpcUrl = validatedConfig.SOROBAN_RPC_URL;
+  const networkPassphrase = validatedConfig.NETWORK_PASSPHRASE;
 
-function isKnownNetwork(network) {
-  return typeof network === 'string' &&
-    Object.prototype.hasOwnProperty.call(NETWORK_RPC_MAP, network);
+  // Defensive invariant check: even though schema guarantees non-empty strings,
+  // explicitly validate to preserve the public contract under schema evolution.
+  if (typeof rpcUrl !== 'string' || rpcUrl.length === 0) {
+    throw new Error(
+      'Stellar config invariant violated: SOROBAN_RPC_URL must be a non-empty string'
+    );
+  }
+
+  if (typeof networkPassphrase !== 'string' || networkPassphrase.length === 0) {
+    throw new Error(
+      'Stellar config invariant violated: NETWORK_PASSPHRASE must be a non-empty string'
+    );
+  }
+
+  // Return the stable public contract shape.
+  // Frozen to prevent caller mutation that could break assumptions.
+  return Object.freeze({
+    rpcUrl,
+    networkPassphrase,
+  });
 }
 
 /**
