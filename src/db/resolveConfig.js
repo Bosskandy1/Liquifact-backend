@@ -32,6 +32,64 @@
  */
 
 /**
+ * Validate the environment parameter.
+ *
+ * @param {unknown} environment - The environment value to validate.
+ * @throws {Error} If environment is invalid.
+ */
+function validateEnvironment(environment) {
+  if (typeof environment !== 'string') {
+    throw new Error(
+      '[db] NODE_ENV must be a string. Received: ' + typeof environment
+    );
+  }
+
+  if (environment.trim() === '') {
+    throw new Error('[db] NODE_ENV cannot be empty or whitespace-only.');
+  }
+
+  if (environment.length > 100) {
+    throw new Error(
+      '[db] NODE_ENV exceeds maximum length of 100 characters.'
+    );
+  }
+
+  // Allow only alphanumeric, underscore, and hyphen to prevent injection or parsing issues
+  if (!/^[a-zA-Z0-9_-]+$/.test(environment)) {
+    throw new Error(
+      '[db] NODE_ENV contains invalid characters. Only alphanumeric, underscore, and hyphen are allowed.'
+    );
+  }
+}
+
+/**
+ * Validate the returned config structure.
+ *
+ * @param {unknown} config - The config object to validate.
+ * @param {string} environment - The environment name for error messages.
+ * @throws {Error} If config structure is invalid.
+ */
+function validateConfigStructure(config, environment) {
+  if (!config || typeof config !== 'object') {
+    throw new Error(
+      `[db] Config for NODE_ENV="${environment}" is not a valid object.`
+    );
+  }
+
+  if (!config.client) {
+    throw new Error(
+      `[db] Config for NODE_ENV="${environment}" is missing required "client" field.`
+    );
+  }
+
+  if (!config.connection) {
+    throw new Error(
+      `[db] Config for NODE_ENV="${environment}" is missing required "connection" field.`
+    );
+  }
+}
+
+/**
  * Load the knexfile config block that corresponds to `environment`.
  *
  * @param {string} environment - The resolved NODE_ENV value.
@@ -49,6 +107,8 @@ function resolveConfig(environment) {
   //     function is invoked.
   //  2. Tests using `jest.isolateModules` get a fresh require cache for
   //     both this module and knexfile, so mock substitutions are scoped.
+  validateEnvironment(environment);
+
   const allConfigs = require('../../knexfile');
 
   // ------------------------------------------------------------------
@@ -64,6 +124,7 @@ function resolveConfig(environment) {
           'production config in tests is not permitted.'
       );
     }
+    validateConfigStructure(testConfig, environment);
     return testConfig;
   }
 
@@ -89,6 +150,7 @@ function resolveConfig(environment) {
       );
     }
 
+    validateConfigStructure(prodConfig, environment);
     return prodConfig;
   }
 
@@ -106,6 +168,8 @@ function resolveConfig(environment) {
   }
 
   return envConfig;
+  validateConfigStructure(devConfig, environment);
+  return devConfig;
 }
 
 module.exports = resolveConfig;

@@ -148,6 +148,25 @@ const mockQuery = {
    * @param {Function} resolve - Fulfilment handler.
    * @returns {Promise<Array>}
    */
+  where: jest.fn().mockReturnThis(),
+  whereNotIn: jest.fn().mockReturnThis(),
+  whereNull: jest.fn().mockReturnThis(),
+  whereIn: jest.fn().mockReturnThis(),
+  whereRaw: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockReturnThis(),
+  offset: jest.fn().mockReturnThis(),
+  returning: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
+  del: jest.fn().mockResolved(1),
+  insert: jest.fn().mockResolved([{ id: 'mock-id', created_at: new Date() }]),
+  update: jest.fn().mockResolved(1),
+  delete: jest.fn().mockResolved(1),
+  first: jest.fn().mockResolved(null),
+  andWhere: jest.fn().mockReturnThis(),
+  orWhere: jest.fn().mockReturnThis(),
+  // Make mockQuery thenable so `await query` resolves to []
   then: jest.fn((resolve) => resolve([])),
 };
 
@@ -188,6 +207,10 @@ db.raw = jest.fn().mockResolvedValue(undefined);
 db.transaction = jest.fn(async (callback) => {
   // Pass the same mock db as the transaction client.
   // Any error thrown by callback propagates naturally.
+db.raw = jest.fn().mockResolved();
+db.destroy = jest.fn().mockResolved();
+db.transaction = jest.fn(async (callback) => {
+  // The callback receives the same mock db instance as try
   await callback(db);
 });
 
