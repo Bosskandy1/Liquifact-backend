@@ -121,40 +121,20 @@ const CONFIG_CODES = Object.freeze({
 // ---------------------------------------------------------------------------
 
 /**
- * Validation codes owned by the storage / object-upload layer.
+ * Returns true only when the given value exactly matches one of the known,
+ * frozen validation codes.
  *
- * @readonly
- * @enum {string}
- * @property {string} INVALID_FILENAME                  - Filename fails allowlist/sanitization.
- * @property {string} INVALID_MIME_TYPE                 - File MIME type not on allowed list.
- * @property {string} FILE_TOO_LARGE                    - Payload exceeds configured body limit.
- * @property {string} INVALID_TENANT_ID                 - Tenant ID contains disallowed characters.
- * @property {string} INVALID_INVOICE_ID                - Invoice ID contains disallowed characters.
- * @property {string} PRESIGNED_URL_EXPIRY_OUT_OF_RANGE - Requested URL expiry outside allowed window.
+ * The lookup is built per call instead of using a module-scoped `Set`, so no
+ * shared mutable state survives across concurrent request handling. A valid
+ * request being processed on one request path must never be able to change the
+ * set that governs another request path in the same process.
+ *
+ * @param {unknown} value - Candidate validation code.
+ * @returns {boolean} Whether the value is a known metrics validation code.
  */
-const STORAGE_CODES = Object.freeze({
-  INVALID_FILENAME: 'INVALID_FILENAME',
-  INVALID_MIME_TYPE: 'INVALID_MIME_TYPE',
-  FILE_TOO_LARGE: 'FILE_TOO_LARGE',
-  INVALID_TENANT_ID: 'INVALID_TENANT_ID',
-  INVALID_INVOICE_ID: 'INVALID_INVOICE_ID',
-  PRESIGNED_URL_EXPIRY_OUT_OF_RANGE: 'PRESIGNED_URL_EXPIRY_OUT_OF_RANGE',
-});
-
-// ---------------------------------------------------------------------------
-// Escrow / on-chain codes
-//
-// Invariants:
-//   - INVALID_CONTRACT_ID is set when a contract address fails Stellar
-//     base-32 format validation.
-//   - RPC_ERROR is set when the Soroban RPC endpoint returns an error or
-//     is unreachable.
-//   - ESCROW_NOT_FOUND is set when no escrow record exists for an invoice.
-//   - ESCROW_ALREADY_LINKED is set when an attempt is made to link an invoice
-//     that already has an active escrow.
-//   - INVALID_ASSET is set when a Stellar asset code is malformed.
-//   - RECONCILIATION_MISMATCH is set when DB funded total ≠ on-chain amount.
-// ---------------------------------------------------------------------------
+function isKnownMetricsValidationCode(value) {
+  return typeof value === 'string' && Object.values(METRICS_VALIDATION_CODES).includes(value);
+}
 
 /**
  * Validation codes owned by the escrow / on-chain layer.
@@ -332,8 +312,12 @@ function codesForError(error) {
     }
   }
 
-  if (out.length === 0) {
-    out.push(METRICS_VALIDATION_CODES.FIELD_INVALID);
+  // A schema that raises a `custom` issue can name its own code via
+  // `params.metricsCode`, so hand-rolled refinements are not flattened into the
+  // generic FIELD_INVALID bucket.
+  const declared = issue.params && issue.params.metricsCode;
+  if (isKnownMetricsValidationCode(declared)) {
+    return declared;
   }
 
   return out;
