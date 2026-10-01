@@ -124,7 +124,7 @@ function _assertConsistentPair(pair, context) {
         `fraudCeiling (${pair.fraudCeiling}).`
     );
   }
-  return pair;
+  return Object.freeze(pair);
 }
 
 /**
@@ -228,16 +228,13 @@ function _buildConfig() {
 
   const tenants = _parseTenantOverrides(process.env.INVOICE_TENANT_THRESHOLDS, defaults);
 
-  // Freeze defaults and the tenant map so the memoized configuration is
-  // immutable for the lifetime of the process (invariant I3).
-  Object.freeze(defaults);
-  Object.freeze(tenants);
-
-  return { defaults, tenants };
+  return Object.freeze({ defaults, tenants });
 }
 
 /** @type {{ defaults: ThresholdSet, tenants: Map<string, ThresholdSet> } | null} */
 let _cache = null;
+/** @type {Error | null} */
+let _initError = null;
 
 /** @type {Error | null} */
 let _cacheError = null;
@@ -249,15 +246,15 @@ let _cacheError = null;
  * @throws {VerificationConfigError} When env defaults or overrides are invalid.
  */
 function _getConfig() {
-  if (_cacheError) {
-    throw _cacheError;
+  if (_initError) {
+    throw _initError;
   }
   if (!_cache) {
     try {
       _cache = _buildConfig();
-    } catch (error) {
-      _cacheError = error;
-      throw error;
+    } catch (err) {
+      _initError = err;
+      throw err;
     }
   }
   return _cache;
@@ -298,7 +295,7 @@ function resolveThresholds(tenantId) {
  */
 function _resetThresholdCache() {
   _cache = null;
-  _cacheError = null;
+  _initError = null;
 }
 
 module.exports = {
