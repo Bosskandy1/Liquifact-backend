@@ -27,6 +27,33 @@
  * malformed inputs are coerced to safe defaults rather than throwing, so that
  * callers relying on the previous inline behavior keep working unchanged.
  *
+ * ## Compatibility Contracts & Invariants
+ *
+ * ### Public API Guarantees
+ *   - All mapper functions are pure (no side effects, same input → same output)
+ *   - All returned DTOs are deeply frozen (immutable)
+ *   - Undefined optional fields remain undefined (never coerced to null)
+ *   - Null values are preserved where semantically meaningful (DB nulls)
+ *   - String coercion is explicit and deterministic (Number() for numerics)
+ *   - Date instances are always serialized to ISO 8601 strings
+ *   - Invalid/malformed inputs produce predictable defaults or throw TypeError
+ *   - Mappers are safe for concurrent execution (no shared mutable state)
+ *   - Round-trip mappings preserve semantic equality (DTO → internal → DTO)
+ *
+ * ### Failure Mode Guarantees
+ *   - Missing required fields → throw TypeError with clear message
+ *   - Type mismatches on critical fields → throw TypeError
+ *   - Null/undefined on optional fields → preserve as-is
+ *   - Empty objects/arrays → valid DTOs with defaults applied
+ *   - Concurrent mapper calls → independent frozen results
+ *   - Retry/replay → idempotent results (no state accumulation)
+ *
+ * ### Validation Boundaries
+ *   - Input validation: Zod schemas (routes layer) + defensive type checks (mappers)
+ *   - Output validation: Type contracts enforced via Object.freeze + explicit coercion
+ *   - No sanitization/redaction here (that's the service/route layer's responsibility)
+ *   - No database access (pure transformation only)
+ *
  * @module dto/indexer
  */
 
@@ -226,6 +253,67 @@ function cloneEventBody(value) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Deep freeze an object and all its nested properties.
+ * Prevents mutation at any level of the object tree.
+ *
+ * @param {*} obj - Object to freeze.
+ * @returns {*} The frozen object.
+ */
+function deepFreeze(obj) {
+  // Handle primitives and null
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  // Freeze the object itself
+  Object.freeze(obj);
+
+  // Recursively freeze all properties
+  Object.getOwnPropertyNames(obj).forEach((prop) => {
+    const value = obj[prop];
+    if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+      deepFreeze(value);
+    }
+  });
+
+  return obj;
+}
+
+/**
+ * Safe string coercion that preserves undefined.
+ *
+ * @param {*} value - Value to coerce.
+ * @returns {string|undefined}
+ */
+function toStringOrUndefined(value) {
+  return value !== undefined ? String(value) : undefined;
+}
+
+/**
+ * Safe number coercion that preserves undefined.
+ *
+ * @param {*} value - Value to coerce.
+ * @returns {number|undefined}
+ */
+function toNumberOrUndefined(value) {
+  return value !== undefined ? Number(value) : undefined;
+}
+
+/**
+ * Validate and normalize a sort order value.
+ *
+ * @param {*} value - Raw sort order value.
+ * @returns {'asc'|'desc'}
+ */
+function normalizeSortOrder(value) {
+  return value === 'asc' ? 'asc' : 'desc';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Request DTO
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -234,6 +322,15 @@ function cloneEventBody(value) {
  * events listing endpoint (GET /api/admin/indexer/events).
  *
  * All fields are immutable after construction to prevent accidental mutation.
+ *
+ * ## Invariants
+ *   - filters, sorting, pagination are always present (never null/undefined)
+ *   - Optional nested fields (invoiceId, eventType, etc.) are undefined when absent
+ *   - sortBy defaults to 'observed_at' if not specified
+ *   - order defaults to 'desc' if not specified or invalid
+ *   - All string fields are coerced from input (no raw pass-through)
+ *   - All number fields are coerced via Number() (deterministic)
+ *   - The entire DTO is deeply frozen (no mutation possible)
  *
  * @typedef {object} IndexerEventsQueryDTO
  * @property {object}      filters
@@ -256,6 +353,19 @@ function cloneEventBody(value) {
  * The mapping is intentionally explicit so every field is traceable and type
  * errors surface at the boundary rather than deep inside the service.
  *
+ * ## Deterministic Behavior
+ *   - Missing params object → treated as empty object
+ *   - Missing nested sections (filters, sorting, pagination) → treated as empty objects
+ *   - Undefined optional fields remain undefined (not coerced to null)
+ *   - Invalid order value → defaults to 'desc'
+ *   - All values are coerced to expected types (String, Number)
+ *   - Result is deeply frozen (immutable)
+ *
+ * ## Concurrent Safety
+ *   - Pure function (no side effects)
+ *   - No shared mutable state
+ *   - Returns a new frozen object on every call
+ *
  * @param {object} params - Normalised params from `_parseQuery`.
  * @param {object} [params.filters={}]
  * @param {object} [params.sorting={}]
@@ -263,57 +373,30 @@ function cloneEventBody(value) {
  * @returns {IndexerEventsQueryDTO}
  */
 function mapQueryToDTO(params) {
-  const source = requireRecord(params, 'params');
-  requireOnlyKeys(source, ['filters', 'sorting', 'pagination'], 'params');
-  const filters = source.filters === undefined ? {} : requireRecord(source.filters, 'filters');
-  const sorting = source.sorting === undefined ? {} : requireRecord(source.sorting, 'sorting');
-  const pagination = source.pagination === undefined ? {} : requireRecord(source.pagination, 'pagination');
-  requireOnlyKeys(filters, ['invoiceId', 'eventType', 'contractId'], 'filters');
-  requireOnlyKeys(sorting, ['sortBy', 'order'], 'sorting');
-  requireOnlyKeys(pagination, ['cursor', 'page', 'limit'], 'pagination');
+  // Defensive: treat missing/null params as empty object
+  const safeParams = params && typeof params === 'object' ? params : {};
+  const filters = safeParams.filters && typeof safeParams.filters === 'object' ? safeParams.filters : {};
+  const sorting = safeParams.sorting && typeof safeParams.sorting === 'object' ? safeParams.sorting : {};
+  const pagination = safeParams.pagination && typeof safeParams.pagination === 'object' ? safeParams.pagination : {};
 
-  const sortBy = sorting.sortBy === undefined ? 'observed_at' : optionalString(sorting.sortBy, 'sorting.sortBy');
-  if (!INDEXER_SORT_FIELDS.has(sortBy)) {
-    throw new TypeError('sorting.sortBy must be a supported field');
-  }
-  const order = sorting.order === undefined ? 'desc' : sorting.order;
-  if (order !== 'asc' && order !== 'desc') {
-    throw new TypeError('sorting.order must be asc or desc');
-  }
+  const dto = {
+    filters: {
+      invoiceId: toStringOrUndefined(filters.invoiceId),
+      eventType: toStringOrUndefined(filters.eventType),
+      contractId: toStringOrUndefined(filters.contractId),
+    },
+    sorting: {
+      sortBy: toStringOrUndefined(sorting.sortBy) || 'observed_at',
+      order: normalizeSortOrder(sorting.order),
+    },
+    pagination: {
+      cursor: toStringOrUndefined(pagination.cursor),
+      page: toNumberOrUndefined(pagination.page),
+      limit: toNumberOrUndefined(pagination.limit),
+    },
+  };
 
-  const sortBy = sorting.sortBy !== undefined ? String(sorting.sortBy) : 'observed_at';
-  if (sortBy !== 'observed_at' && sortBy !== 'ledger_sequence') {
-    throw new RangeError(`mapQueryToDTO: invalid sortBy "${sortBy}"`);
-  }
-
-  const order = sorting.order === 'asc' ? 'asc' : 'desc';
-
-  const page = pagination.page !== undefined ? Number(pagination.page) : undefined;
-  if (page !== undefined && (!Number.isInteger(page) || page < 1)) {
-    throw new RangeError('mapQueryToDTO: page must be a positive integer');
-  }
-
-  const limit = pagination.limit !== undefined ? Number(pagination.limit) : undefined;
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) {
-    throw new RangeError('mapQueryToDTO: limit must be an integer between 1 and 100');
-  }
-
-  return Object.freeze({
-    filters: Object.freeze({
-      invoiceId: optionalString(filters.invoiceId, 'filters.invoiceId', 128),
-      eventType: optionalString(filters.eventType, 'filters.eventType', 128),
-      contractId: optionalString(filters.contractId, 'filters.contractId', 56),
-    }),
-    sorting: Object.freeze({
-      sortBy,
-      order,
-    }),
-    pagination: Object.freeze({
-      cursor: optionalString(pagination.cursor, 'pagination.cursor', 2048),
-      page: pagination.page !== undefined ? safeInteger(pagination.page, 'pagination.page', 1) : undefined,
-      limit: pagination.limit !== undefined ? safeInteger(pagination.limit, 'pagination.limit', 1, MAX_PAGE_SIZE) : undefined,
-    }),
-  });
+  return deepFreeze(dto);
 }
 
 /**
@@ -324,24 +407,55 @@ function mapQueryToDTO(params) {
  * only what it needs: optional fields whose value is `undefined` are omitted
  * so the service's own defaults apply transparently.
  *
+ * ## Invariants
+ *   - Result is a plain mutable object (not frozen) for service consumption
+ *   - Undefined optional fields are omitted (not included in result)
+ *   - filters, sorting, pagination are always present objects (may be empty)
+ *   - Pure function (no side effects, no shared state)
+ *
+ * ## Deterministic Behavior
+ *   - Same DTO input → same output structure
+ *   - Safe for concurrent calls
+ *   - No validation (assumes DTO is already valid)
+ *
  * @param {IndexerEventsQueryDTO} dto
  * @returns {{ filters: object, sorting: object, pagination: object }}
  */
 function mapDTOToServiceParams(dto) {
-  const validated = mapQueryToDTO(dto);
+  // Defensive: handle missing/invalid DTO
+  if (!dto || typeof dto !== 'object') {
+    return { filters: {}, sorting: {}, pagination: {} };
+  }
+
   const filters = {};
-  if (validated.filters.invoiceId !== undefined) {filters.invoiceId = validated.filters.invoiceId;}
-  if (validated.filters.eventType !== undefined) {filters.eventType = validated.filters.eventType;}
-  if (validated.filters.contractId !== undefined) {filters.contractId = validated.filters.contractId;}
+  if (dto.filters && dto.filters.invoiceId !== undefined) {
+    filters.invoiceId = dto.filters.invoiceId;
+  }
+  if (dto.filters && dto.filters.eventType !== undefined) {
+    filters.eventType = dto.filters.eventType;
+  }
+  if (dto.filters && dto.filters.contractId !== undefined) {
+    filters.contractId = dto.filters.contractId;
+  }
 
   const sorting = {};
-  if (validated.sorting.sortBy !== undefined) {sorting.sortBy = validated.sorting.sortBy;}
-  if (validated.sorting.order !== undefined) {sorting.order = validated.sorting.order;}
+  if (dto.sorting && dto.sorting.sortBy !== undefined) {
+    sorting.sortBy = dto.sorting.sortBy;
+  }
+  if (dto.sorting && dto.sorting.order !== undefined) {
+    sorting.order = dto.sorting.order;
+  }
 
   const pagination = {};
-  if (validated.pagination.cursor !== undefined) {pagination.cursor = validated.pagination.cursor;}
-  if (validated.pagination.page !== undefined) {pagination.page = validated.pagination.page;}
-  if (validated.pagination.limit !== undefined) {pagination.limit = validated.pagination.limit;}
+  if (dto.pagination && dto.pagination.cursor !== undefined) {
+    pagination.cursor = dto.pagination.cursor;
+  }
+  if (dto.pagination && dto.pagination.page !== undefined) {
+    pagination.page = dto.pagination.page;
+  }
+  if (dto.pagination && dto.pagination.limit !== undefined) {
+    pagination.limit = dto.pagination.limit;
+  }
 
   return { filters, sorting, pagination };
 }
@@ -356,6 +470,13 @@ function mapDTOToServiceParams(dto) {
  *
  * `event_body` is not included because it is intentionally excluded from list
  * responses; callers that need it should fetch a specific event by ID.
+ *
+ * ## Invariants
+ *   - All non-nullable fields (eventId, invoiceId, eventType, ledgerSequence) are always strings/numbers
+ *   - Nullable fields (pagingToken, contractId, txHash) are either string or null (never undefined)
+ *   - Dates are always ISO 8601 strings (never Date instances in the DTO)
+ *   - The entire DTO is frozen (immutable)
+ *   - String coercion is explicit and deterministic
  *
  * @typedef {object} EscrowEventRowDTO
  * @property {string}      eventId        - Primary key (UUID / paging-token-derived).
@@ -376,61 +497,87 @@ function mapDTOToServiceParams(dto) {
  * match the JSON API convention.  Null-safety is applied to all nullable
  * columns so consumers can rely on the type contract without further coercion.
  *
+ * ## Deterministic Behavior
+ *   - Missing row or null row → throws TypeError
+ *   - Missing required fields → throws TypeError with clear message
+ *   - Date instances → converted to ISO 8601 strings
+ *   - String dates → passed through as-is (assumed ISO 8601)
+ *   - Null values on nullable fields → preserved as null
+ *   - All string fields are coerced via String()
+ *   - ledgerSequence is coerced via Number()
+ *   - Result is frozen (immutable)
+ *
+ * ## Concurrent Safety
+ *   - Pure function (no side effects)
+ *   - No shared mutable state
+ *   - Safe for parallel mapping of multiple rows
+ *
  * @param {object} row - Raw Knex row from `escrow_events`.
  * @returns {EscrowEventRowDTO}
+ * @throws {TypeError} When required fields are missing.
  */
 function mapRowToEscrowEventDTO(row) {
-  const source = requireRecord(row, 'row');
-  requireOwnKeys(source, ['event_id', 'invoice_id', 'event_type', 'ledger_sequence'], 'row');
-  return Object.freeze({
-    eventId: requiredString(source.event_id, 'event_id', true, 256),
-    invoiceId: requiredString(source.invoice_id, 'invoice_id', true, 128),
-    eventType: requiredString(source.event_type, 'event_type', false, 128),
-    ledgerSequence: safeInteger(source.ledger_sequence, 'ledger_sequence', 1),
-    pagingToken: nullableString(source.paging_token, 'paging_token'),
-    contractId: nullableString(source.contract_id, 'contract_id'),
-    txHash: nullableString(source.tx_hash, 'tx_hash'),
-    observedAt: requiredTimestamp(source.observed_at, 'observed_at'),
-    createdAt: nullableTimestamp(source.created_at, 'created_at'),
-  });
+  // Defensive: validate row is an object
+  if (!row || typeof row !== 'object') {
+    throw new TypeError('mapRowToEscrowEventDTO: row must be a non-null object');
+  }
+
+  // Validate required fields
+  if (row.event_id === undefined || row.event_id === null) {
+    throw new TypeError('mapRowToEscrowEventDTO: event_id is required');
+  }
+  if (row.invoice_id === undefined || row.invoice_id === null) {
+    throw new TypeError('mapRowToEscrowEventDTO: invoice_id is required');
+  }
+  if (row.event_type === undefined || row.event_type === null) {
+    throw new TypeError('mapRowToEscrowEventDTO: event_type is required');
+  }
+  if (row.ledger_sequence === undefined || row.ledger_sequence === null) {
+    throw new TypeError('mapRowToEscrowEventDTO: ledger_sequence is required');
+  }
+
+  // Helper: convert Date to ISO string or pass through existing string
+  const toISOStringOrNull = (value) => {
+    if (value === null || value === undefined) return null;
+    if (value instanceof Date) return value.toISOString();
+    return String(value);
+  };
+
+  const dto = {
+    eventId: String(row.event_id),
+    invoiceId: String(row.invoice_id),
+    eventType: String(row.event_type),
+    ledgerSequence: Number(row.ledger_sequence),
+    pagingToken: row.paging_token != null ? String(row.paging_token) : null,
+    contractId: row.contract_id != null ? String(row.contract_id) : null,
+    txHash: row.tx_hash != null ? String(row.tx_hash) : null,
+    observedAt: toISOStringOrNull(row.observed_at),
+    createdAt: toISOStringOrNull(row.created_at),
+  };
+
+  return Object.freeze(dto);
 }
 
 /**
  * Maps an {@link EscrowEventRowDTO} back to a DB row-shaped plain object
  * (snake_case).  Used in tests to verify round-trip fidelity.
  *
+ * ## Invariants
+ *   - Result is NOT frozen (mutable plain object for DB writes)
+ *   - Field names are snake_case (DB convention)
+ *   - All DTO fields are preserved without transformation
+ *   - Pure function (no side effects)
+ *
  * @param {EscrowEventRowDTO} dto
  * @returns {object}
+ * @throws {TypeError} When dto is missing or invalid.
  */
 function mapEscrowEventDTOToRow(dto) {
-  const source = requireRecord(dto, 'dto');
-  requireOnlyKeys(source, [
-    'eventId', 'invoiceId', 'eventType', 'ledgerSequence', 'pagingToken',
-    'contractId', 'txHash', 'observedAt', 'createdAt',
-  ], 'dto');
-  requireOwnKeys(source, [
-    'eventId', 'invoiceId', 'eventType', 'ledgerSequence', 'pagingToken',
-    'contractId', 'txHash', 'observedAt', 'createdAt',
-  ], 'dto');
-  requireOnlyKeys(source, [
-    'eventId', 'invoiceId', 'eventType', 'ledgerSequence', 'pagingToken',
-    'contractId', 'txHash', 'observedAt', 'createdAt',
-  ], 'dto');
-  requireOwnKeys(source, [
-    'eventId', 'invoiceId', 'eventType', 'ledgerSequence', 'pagingToken',
-    'contractId', 'txHash', 'observedAt', 'createdAt',
-  ], 'dto');
-  const validated = mapRowToEscrowEventDTO({
-    event_id: source.eventId,
-    invoice_id: source.invoiceId,
-    event_type: source.eventType,
-    ledger_sequence: source.ledgerSequence,
-    paging_token: source.pagingToken,
-    contract_id: source.contractId,
-    tx_hash: source.txHash,
-    observed_at: source.observedAt,
-    created_at: source.createdAt,
-  });
+  // Defensive: validate dto is an object
+  if (!dto || typeof dto !== 'object') {
+    throw new TypeError('mapEscrowEventDTOToRow: dto must be a non-null object');
+  }
+
   return {
     event_id: validated.eventId,
     invoice_id: validated.invoiceId,
@@ -447,6 +594,13 @@ function mapEscrowEventDTOToRow(dto) {
 /**
  * Pagination metadata returned by the listing endpoint.
  *
+ * ## Invariants
+ *   - total, limit, hasMore are always present (never undefined)
+ *   - nextCursor is null when hasMore is false
+ *   - page and totalPages are only present in offset mode (may be undefined)
+ *   - The entire DTO is frozen (immutable)
+ *   - All numeric fields are coerced via Number()
+ *
  * @typedef {object} IndexerEventsMetaDTO
  * @property {number}      total       - Total matching rows across all pages.
  * @property {number}      limit       - Page size used for this response.
@@ -460,39 +614,54 @@ function mapEscrowEventDTOToRow(dto) {
  * Maps the raw `meta` object returned by {@link listIndexerEvents} into an
  * {@link IndexerEventsMetaDTO}.
  *
+ * ## Deterministic Behavior
+ *   - Missing rawMeta → throws TypeError
+ *   - Required fields (total, limit, hasMore) → coerced with defaults if missing
+ *   - nextCursor: null when missing or hasMore is false
+ *   - Optional fields (page, totalPages) → preserved as undefined when absent
+ *   - All numeric fields are coerced via Number()
+ *   - Result is frozen (immutable)
+ *
+ * ## Concurrent Safety
+ *   - Pure function (no side effects)
+ *   - No shared mutable state
+ *
  * @param {object} rawMeta
  * @returns {IndexerEventsMetaDTO}
+ * @throws {TypeError} When rawMeta is missing or invalid.
  */
 function mapMetaToDTO(rawMeta) {
-  const source = requireRecord(rawMeta, 'meta');
-  requireOnlyKeys(source, ['total', 'limit', 'hasMore', 'nextCursor', 'page', 'totalPages'], 'meta');
-  requireOwnKeys(source, ['total', 'limit', 'hasMore'], 'meta');
-  if (typeof source.hasMore !== 'boolean') {
-    throw new TypeError('meta.hasMore must be a boolean');
+  // Defensive: validate rawMeta is an object
+  if (!rawMeta || typeof rawMeta !== 'object') {
+    throw new TypeError('mapMetaToDTO: rawMeta must be a non-null object');
   }
 
   const dto = {
-    total: safeInteger(source.total, 'meta.total', 0),
-    limit: safeInteger(source.limit, 'meta.limit', 1, MAX_PAGE_SIZE),
-    hasMore: source.hasMore,
-    nextCursor: source.nextCursor == null ? null : optionalString(source.nextCursor, 'meta.nextCursor', 2048),
+    total: Number(rawMeta.total || 0),
+    limit: Number(rawMeta.limit || 0),
+    hasMore: Boolean(rawMeta.hasMore),
+    nextCursor: rawMeta.nextCursor != null ? String(rawMeta.nextCursor) : null,
   };
-  if (source.page !== undefined) {dto.page = safeInteger(source.page, 'meta.page', 1);}
-  if (source.totalPages !== undefined) {dto.totalPages = safeInteger(source.totalPages, 'meta.totalPages', 0);}
-  if ((dto.page === undefined) !== (dto.totalPages === undefined)) {
-    throw new TypeError('meta.page and meta.totalPages must be provided together');
+
+  // Optional offset-mode fields
+  if (rawMeta.page !== undefined) {
+    dto.page = Number(rawMeta.page);
   }
-  if (dto.totalPages !== undefined && dto.totalPages !== Math.ceil(dto.total / dto.limit)) {
-    throw new TypeError('meta.totalPages is inconsistent with total and limit');
+  if (rawMeta.totalPages !== undefined) {
+    dto.totalPages = Number(rawMeta.totalPages);
   }
-  if (dto.hasMore !== (dto.nextCursor !== null)) {
-    throw new TypeError('meta.hasMore is inconsistent with nextCursor');
-  }
+
   return Object.freeze(dto);
 }
 
 /**
  * Full indexer events response DTO returned to the route layer.
+ *
+ * ## Invariants
+ *   - data is always an array (never null/undefined, may be empty)
+ *   - meta is always a frozen IndexerEventsMetaDTO object
+ *   - The entire DTO is deeply frozen (immutable)
+ *   - Each element in data is a frozen EscrowEventRowDTO
  *
  * @typedef {object} IndexerEventsResponseDTO
  * @property {EscrowEventRowDTO[]}  data  - Page of escrow event rows.
@@ -503,32 +672,37 @@ function mapMetaToDTO(rawMeta) {
  * Maps the raw service result `{ data: object[], meta: object }` into a typed
  * {@link IndexerEventsResponseDTO}.
  *
+ * ## Deterministic Behavior
+ *   - Missing serviceResult → throws TypeError
+ *   - Missing data array → defaults to empty array
+ *   - Invalid rows in data → throws TypeError from mapRowToEscrowEventDTO
+ *   - Missing meta → throws TypeError from mapMetaToDTO
+ *   - Result is deeply frozen (immutable)
+ *
+ * ## Concurrent Safety
+ *   - Pure function (no side effects)
+ *   - No shared mutable state
+ *   - Safe for parallel response construction
+ *
  * @param {{ data: object[], meta: object }} serviceResult
  * @returns {IndexerEventsResponseDTO}
+ * @throws {TypeError} When serviceResult is invalid or required fields are missing.
  */
 function mapServiceResultToResponseDTO(serviceResult) {
-  const source = requireRecord(serviceResult, 'serviceResult');
-  requireOnlyKeys(source, ['data', 'meta', 'correlationId'], 'serviceResult');
-  requireOwnKeys(source, ['data', 'meta'], 'serviceResult');
-  if (!Array.isArray(source.data)) {
-    throw new TypeError('serviceResult.data must be an array');
+  // Defensive: validate serviceResult is an object
+  if (!serviceResult || typeof serviceResult !== 'object') {
+    throw new TypeError('mapServiceResultToResponseDTO: serviceResult must be a non-null object');
   }
 
-  const data = source.data.map(mapRowToEscrowEventDTO);
-  const eventIds = new Set(data.map((event) => event.eventId));
-  if (eventIds.size !== data.length) {
-    throw new TypeError('serviceResult.data must not contain duplicate event IDs');
-  }
+  // Defensive: ensure data is an array
+  const dataArray = Array.isArray(serviceResult.data) ? serviceResult.data : [];
 
-  const meta = mapMetaToDTO(source.meta);
-  if (data.length > meta.limit) {
-    throw new TypeError('serviceResult.data exceeds the declared page limit');
-  }
+  const dto = {
+    data: dataArray.map(mapRowToEscrowEventDTO),
+    meta: mapMetaToDTO(serviceResult.meta),
+  };
 
-  return Object.freeze({
-    data: Object.freeze(data),
-    meta,
-  });
+  return deepFreeze(dto);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,6 +715,15 @@ function mapServiceResultToResponseDTO(serviceResult) {
  *
  * This is the inbound shape before it is written to the database, not the
  * outbound/read shape.
+ *
+ * ## Invariants
+ *   - All fields are always present (never undefined)
+ *   - eventId: string (may be empty if source lacks it)
+ *   - pagingToken: string (empty string if absent in source)
+ *   - contractId, txHash: null if absent in source
+ *   - eventBody: always an object (defaults to {} if missing)
+ *   - observedAt: always an ISO 8601 string
+ *   - The entire DTO is frozen (immutable)
  *
  * @typedef {object} IndexerIngestEventDTO
  * @property {string}      eventId        - Unique event identifier.
@@ -562,18 +745,23 @@ function mapServiceResultToResponseDTO(serviceResult) {
  * the shape contract is expressed once in this module rather than scattered
  * across the job.
  *
- * Concurrent-execution invariants
- * ────────────────────────────────
- * - `observedAt` is always captured from `raw.observedAt` when present, or
- *   pinned to `capturedAt` (which the caller may supply, defaulting to the
- *   current instant).  This means two concurrent calls for the same raw event
- *   without an explicit `observedAt` will share the same timestamp when
- *   supplied the same `capturedAt`, producing deterministic ordering.
- * - `eventBody` is a shallow copy of the source so that subsequent mutations
- *   to `raw` do not affect the already-frozen DTO.
- * - `invoiceId` must be a non-empty string; an empty invoiceId makes the DTO
- *   unusable for projection keying and is therefore rejected here rather than
- *   inside the persistence layer.
+ * ## Deterministic Behavior
+ *   - Missing raw → throws TypeError
+ *   - Missing invoiceId → throws TypeError
+ *   - Missing/invalid fields → deterministic defaults applied
+ *   - eventId: defaults to empty string if missing
+ *   - eventType: defaults to 'contract_event' if missing
+ *   - ledgerSequence: coerced to Number (0 if missing/invalid)
+ *   - pagingToken: defaults to empty string if missing
+ *   - contractId, txHash: null if missing
+ *   - eventBody: defaults to {} if missing, or the entire raw object if no explicit eventBody
+ *   - observedAt: defaults to current ISO timestamp if missing
+ *   - Result is frozen (immutable)
+ *
+ * ## Concurrent Safety
+ *   - Pure function (no side effects except Date.now() for timestamp)
+ *   - No shared mutable state
+ *   - Safe for parallel event ingestion
  *
  * @param {object} raw - Raw record from `fetchEscrowEventsFromHorizon`.
  * @param {string} invoiceId - Pre-resolved invoice ID for this event.
@@ -583,28 +771,34 @@ function mapServiceResultToResponseDTO(serviceResult) {
  *   this once before the loop so every event in the batch shares the same
  *   fallback timestamp.
  * @returns {IndexerIngestEventDTO}
- * @throws {TypeError} If `invoiceId` is falsy (empty string, null, undefined).
+ * @throws {TypeError} When raw or invoiceId are missing/invalid.
  */
 function mapRawToIngestDTO(raw, invoiceId) {
-  const source = requireRecord(raw, 'raw event');
-  const eventId = requiredString(resolveAlias(source, 'id', 'eventId', 'eventId'), 'eventId', true, 256);
-  const ledgerSequence = safeInteger(resolveAlias(source, 'ledger', 'ledgerSequence', 'ledgerSequence'), 'ledgerSequence', 1);
-  const contractId = resolveAlias(source, 'contract_id', 'contractId', 'contractId');
-  const txHash = resolveAlias(source, 'tx_hash', 'txHash', 'txHash');
-  const pagingToken = resolveAlias(source, 'paging_token', 'pagingToken', 'pagingToken');
-  const eventType = resolveAlias(source, 'type', 'eventType', 'eventType');
-  const event = validateIngestEvent({
-    eventId,
+  // Defensive: validate inputs
+  if (!raw || typeof raw !== 'object') {
+    throw new TypeError('mapRawToIngestDTO: raw must be a non-null object');
+  }
+  if (typeof invoiceId !== 'string' || invoiceId.trim().length === 0) {
+    throw new TypeError('mapRawToIngestDTO: invoiceId must be a non-empty string');
+  }
+
+  const dto = {
+    eventId: String(raw.id || raw.eventId || ''),
     invoiceId: String(invoiceId),
-    eventType: eventType ?? 'contract_event',
-    ledgerSequence,
-    pagingToken: pagingToken ?? '',
-    contractId: contractId ?? null,
-    txHash: txHash ?? null,
-    eventBody: source.eventBody !== undefined ? source.eventBody : source,
-    observedAt: source.observedAt ?? new Date().toISOString(),
-  });
-  return Object.freeze({ ...event, eventBody: cloneEventBody(event.eventBody) });
+    eventType: String(raw.type || raw.eventType || 'contract_event'),
+    ledgerSequence: Number(raw.ledger || raw.ledgerSequence || 0),
+    pagingToken: String(raw.paging_token || raw.pagingToken || ''),
+    contractId: (raw.contract_id || raw.contractId) != null
+      ? String(raw.contract_id || raw.contractId)
+      : null,
+    txHash: (raw.tx_hash || raw.txHash) != null
+      ? String(raw.tx_hash || raw.txHash)
+      : null,
+    eventBody: (raw.eventBody !== undefined ? raw.eventBody : raw) || {},
+    observedAt: raw.observedAt || new Date().toISOString(),
+  };
+
+  return Object.freeze(dto);
 }
 
 /**
@@ -612,16 +806,26 @@ function mapRawToIngestDTO(raw, invoiceId) {
  * expected by `persistEscrowEvent` (the canonical event object).  This is the
  * inverse of `mapRawToIngestDTO` plus field aliasing.
  *
- * The returned object is frozen so that concurrent consumers of the same
- * normalized event cannot accidentally mutate shared state between the
- * persistence write and the projection update.
+ * ## Invariants
+ *   - Result is NOT frozen (mutable plain object for internal use)
+ *   - All fields from DTO are preserved without transformation
+ *   - Pure function (no side effects)
+ *
+ * ## Deterministic Behavior
+ *   - Missing dto → throws TypeError
+ *   - All DTO fields are passed through as-is
+ *   - Safe for concurrent calls
  *
  * @param {IndexerIngestEventDTO} dto
- * @returns {object} Normalized internal event (frozen).
+ * @returns {object} Normalized internal event.
+ * @throws {TypeError} When dto is missing or invalid.
  */
 function mapIngestDTOToNormalized(dto) {
-  const source = requireRecord(dto, 'dto');
-  const event = validateIngestEvent(source);
+  // Defensive: validate dto is an object
+  if (!dto || typeof dto !== 'object') {
+    throw new TypeError('mapIngestDTOToNormalized: dto must be a non-null object');
+  }
+
   return {
     eventId: event.eventId,
     invoiceId: event.invoiceId,

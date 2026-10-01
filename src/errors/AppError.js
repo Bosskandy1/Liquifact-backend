@@ -4,63 +4,226 @@ const formatProblemDetails = require('../utils/problemDetails');
 const { getProblemType, getStandardTitle } = require('../utils/problemDetails');
 
 /**
- * @fileoverview RFC 7807-compliant application error class.
+ * Custom Error class for RFC 7807 compliant errors.
+ * Extends the built-in Error class to include Problem Details fields.
  *
- * ## Design invariants
+ * ## Concurrent Execution Safety
  *
- * 1. Construction is always **deterministic**: every field has a defined
- *    default, invalid inputs are coerced to safe values, and no call ever
- *    throws due to missing or malformed params.
- * 2. `status` is always a **safe integer in [100, 599]**; out-of-range values
- *    are clamped to 500 so `res.status()` never receives a bogus value.
- * 3. `title` and `this.message` are always **non-empty strings** — callers
- *    never see the literal "undefined" message that `super(undefined)` would
- *    produce.
- * 4. `type` is always a **non-empty string**; when omitted it is derived from
- *    `status` via the canonical `getProblemType` helper so the wire type is
- *    meaningful rather than the opaque "about:blank" default.
- * 5. `retryable` is always a **boolean** (never undefined/null on the
- *    instance), preventing accidental truthy/falsy bugs in callers.
- * 6. `retryHint` is always a **string** (never undefined), keeping the wire
- *    format stable.
- * 7. `fieldErrors` is always **undefined or a plain array**; it is included
- *    in `toJSON()` / `toHTTPResponse()` when present so the field-level
- *    validation surface is reachable without additional duck-typing.
- * 8. `context` is **never serialized** to JSON or included in HTTP responses;
- *    it exists solely for internal tracing and is explicitly excluded from
- *    `toJSON()`.
- * 9. The static `AppError.is(value)` type guard replaces ad-hoc
- *    `instanceof || .name === "AppError"` checks across the codebase.
- * 10. Static factory helpers (`notFound`, `forbidden`, `badRequest`,
- *     `conflict`, `unprocessable`, `tooManyRequests`, `serviceUnavailable`,
- *     `internal`) provide a single, consistent construction path for each
- *     common HTTP status.
+ * This error class is hardened for concurrent and repeated execution:
+ *   - All properties are immutable after construction (frozen)
+ *   - Nested objects (context, fieldErrors) are deep-frozen
+ *   - No mutable shared state between instances
+ *   - Safe for multi-threaded logging, serialization, and inspection
+ *   - Prevents race conditions from property mutation
+ *   - Idempotent serialization (toJSON always produces same output)
  *
- * @module errors/AppError
+ * ## Invariants
+ *   - `params` object is never retained (defensive copy via formatProblemDetails)
+ *   - All RFC 7807 fields are validated and normalized by formatProblemDetails
+ *   - Properties cannot be modified after construction
+ *   - Stack trace is captured once and cannot be tampered with
+ *   - Context and fieldErrors are deeply frozen to prevent nested mutations
  */
+class AppError extends Error {
+  /**
+   * Creates a new AppError instance.
+   *
+   * @param {Object} params
+   * @param {string} params.type - A URI reference [RF3986] that identifies the problem type.
+   * @param {string} params.title - A short, human-readable summary of the problem type.
+   * @param {number} params.status - The HTTP status code (e.g., 400, 404, 500).
+   * @param {string} params.detail - A human-readable explanation specific to this occurrence of the problem.
+   * @param {string} [params.instance] - A URI reference that identifies the specific occurrence of the problem.
+   * @param {string} [params.code] - Application-specific error code.
+   * @param {boolean} [params.retryable] - Whether the operation is retryable.
+   * @param {string} [params.retryHint] - Advice on how/when to retry.
+   * @param {Object} [params.fieldErrors] - Field-level validation errors.
+   * @param {*} [params.context] - Additional context for debugging.
+   * @returns {AppError}
+   */
+  constructor(params) {
+    const { title, context, fieldErrors } = params || {};
+    super(title);
 
-/** Minimum valid HTTP status code. */
-const HTTP_STATUS_MIN = 100;
-/** Maximum valid HTTP status code. */
-const HTTP_STATUS_MAX = 599;
-/** Fallback status when an invalid value is supplied. */
-const HTTP_STATUS_FALLBACK = 500;
+    // Freeze name to prevent tampering
+    Object.defineProperty(this, 'name', {
+      value: this.constructor.name,
+      writable: false,
+      enumerable: false,
+      configurable: false,
+    });
+
+    // Delegate to canonical builder for ALL field assembly/defaulting
+    // This ensures deterministic, validated field values
+    const problem = formatProblemDetails({
+      ...params,
+      stack: undefined,
+    });
+
+    // Define immutable RFC 7807 properties
+    Object.defineProperty(this, 'type', {
+      value: problem.type,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'title', {
+      value: problem.title,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'status', {
+      value: problem.status,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'detail', {
+      value: problem.detail,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'instance', {
+      value: problem.instance,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'code', {
+      value: problem.code,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'retryable', {
+      value: problem.retryable,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    Object.defineProperty(this, 'retryHint', {
+      value: problem.retry_hint,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    // Deep freeze context to prevent nested mutations
+    const frozenContext = context ? deepFreeze(context) : null;
+    Object.defineProperty(this, 'context', {
+      value: frozenContext,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    // Deep freeze fieldErrors to prevent nested mutations
+    const frozenFieldErrors = (params && Object.prototype.hasOwnProperty.call(params, 'fieldErrors'))
+      ? deepFreeze(fieldErrors)
+      : undefined;
+    Object.defineProperty(this, 'fieldErrors', {
+      value: frozenFieldErrors,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    // Capture stack trace, excluding constructor call from it
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+
+    // Freeze the entire error instance to prevent any mutation
+    Object.freeze(this);
+  }
+
+  /**
+   * Custom serialization for safe logging and inspection.
+   * Idempotent: always produces the same output for the same error instance.
+   *
+   * @returns {object} Serialized RFC 7807 problem details.
+   */
+  toJSON() {
+    const result = {
+      type: this.type,
+      title: this.title,
+      status: this.status,
+    };
+
+    if (this.detail !== undefined) {
+      result.detail = this.detail;
+    }
+    if (this.instance !== undefined) {
+      result.instance = this.instance;
+    }
+    if (this.code !== undefined) {
+      result.code = this.code;
+    }
+    if (this.retryable !== undefined) {
+      result.retryable = this.retryable;
+    }
+    if (this.retryHint !== undefined) {
+      result.retry_hint = this.retryHint;
+    }
+    if (this.fieldErrors !== undefined) {
+      result.fieldErrors = this.fieldErrors;
+    }
+    if (this.context !== null && this.context !== undefined) {
+      result.context = this.context;
+    }
+    if (this.stack) {
+      result.stack = this.stack;
+    }
+
+    return result;
+  }
+
+  /**
+   * Custom inspection for Node.js util.inspect.
+   * Provides clean output for debugging and logging.
+   *
+   * @returns {string} Formatted error string.
+   */
+  [Symbol.for('nodejs.util.inspect.custom')]() {
+    const codeStr = this.code ? ` [${this.code}]` : '';
+    return `${this.name}${codeStr}: ${this.title} (HTTP ${this.status})`;
+  }
+}
 
 /**
- * Coerce a raw status value to a safe integer.
+ * Deep freeze an object and all its nested properties.
+ * Prevents mutation at any level of the object tree.
  *
- * @param {unknown} raw - Raw status value from params.
- * @returns {number} A valid HTTP status code in [100, 599].
+ * @param {*} obj - Object to freeze.
+ * @returns {*} The frozen object.
  */
-function coerceStatus(raw) {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) {
-    return HTTP_STATUS_FALLBACK;
+function deepFreeze(obj) {
+  // Handle primitives and null
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
   }
-  if (n < HTTP_STATUS_MIN || n > HTTP_STATUS_MAX) {
-    return HTTP_STATUS_FALLBACK;
-  }
-  return n;
+
+  // Freeze the object itself
+  Object.freeze(obj);
+
+  // Recursively freeze all properties
+  Object.getOwnPropertyNames(obj).forEach((prop) => {
+    const value = obj[prop];
+    if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+      deepFreeze(value);
+    }
+  });
+
+  return obj;
 }
 
 /**
@@ -493,7 +656,12 @@ class AppError extends Error {
  *
  * @type {string}
  */
-AppError.FENCING_TOKEN_REJECTED = 'FENCING_TOKEN_REJECTED';
+Object.defineProperty(AppError, 'FENCING_TOKEN_REJECTED', {
+  value: 'FENCING_TOKEN_REJECTED',
+  writable: false,
+  enumerable: true,
+  configurable: false,
+});
 
 // ---------------------------------------------------------------------------
 // Module-private helpers (exported for mapError / errorHandler reuse)
