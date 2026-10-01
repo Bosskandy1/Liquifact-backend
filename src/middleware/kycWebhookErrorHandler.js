@@ -54,14 +54,16 @@ function kycWebhookErrorHandler(err, req, res, next) {
   // for the log line specifically (issue #1200) — the messages that can
   // carry provider-controlled content are already sanitized at the point
   // they are constructed (see kycWebhookService.js), so this is a backstop
-  // rather than the only line of defense. `correlationId` is a value this
+  // rather than the only line of defense.  `correlationId` is a value this
   // service generates itself, never provider input, so it is logged as-is.
+  //
+  // toLogContext() provides structured observability fields (code, status,
+  // smeId, tenantId, requestId) without leaking raw error internals.
   logger.warn(
     {
       err: sanitizeTelemetryString(err.message),
-      code: err.code,
-      status: err.status,
       correlationId,
+      ...err.toLogContext(),
     },
     'kyc-webhook error',
   );
