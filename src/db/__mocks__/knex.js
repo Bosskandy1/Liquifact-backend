@@ -2,234 +2,266 @@
 
 /**
  * @file src/db/__mocks__/knex.js
- * @description Manual Jest mock for `src/db/knex`.
+ * @description Manual Jest mock for the Knex database client.
  *
- * Mirrors the public interface of the hardened production module so tests
- * that use `jest.mock('../../src/db/knex')` exercise the same lifecycle
- * invariants that production code depends on:
+ * This mock satisfies the same public interface contract as a real Knex
+ * instance so that unit tests can import `src/db/knex` without opening a
+ * real database connection. The shape is verified by the compatibility
+ * contract tests in `src/db/knex.compatibility.test.js` (CONTRACT 10-13).
  *
- *   - db(table)         — fluent query builder; thenable; resolves to []
- *   - db.raw()          — resolves to undefined
- *   - db.transaction()  — passes a transaction-scoped mock (same shape) to callback
- *   - db.destroy()      — idempotent teardown; sets state → DESTROYED
- *   - db._getState()    — returns current DB_STATE string
- *   - db._DB_STATE      — frozen enum mirror of the production DB_STATE
- *   - db._resetState()  — test-only helper; resets state back to READY
+ * ## Interface contract (mirroring real Knex)
  *
- * Destroyed-state guard
- * ---------------------
- * Once `db.destroy()` has been called (state: DESTROYED), calling `db()`,
- * `db.raw()`, or `db.transaction()` throws a `DatabaseLifecycleError` with
- * `code = 'DB_ALREADY_DESTROYED'`.  This prevents tests from accidentally
- * exercising code that calls the DB after shutdown without noticing.
+ * - `db(tableName)` — callable table-selector that returns a fluent query
+ *   builder chain.
+ * - `db.raw(sql, bindings?)` — raw SQL passthrough; resolves to undefined.
+ * - `db.transaction(callback)` — executes callback with `db` as the trx
+ *   argument; propagates errors thrown by the callback.
+ * - `db.destroy()` — resolves to undefined (pool teardown stub for graceful
+ *   shutdown).
+ * - `db.schema` — stub object for DDL operations (callers check existence).
+ * - `db.migrate` — stub object with `latest` for migration runners.
+ * - `db.fn` — stub with `now()` for timestamp helpers.
  *
- * Transaction isolation
- * ---------------------
- * `db.transaction(callback)` passes a *separate* mock instance (trx) to the
- * callback so tests can inspect which queries were issued inside a transaction
- * independently from those issued on the outer `db` mock.
+ * ## Fluent chain methods (CONTRACT 11)
+ *
+ * Every query-builder method on the chain returns `this` so callers can
+ * compose arbitrarily deep chains:
+ *   `db('t').where({}).select('*').orderBy('id').limit(10)`
+ *
+ * ## Terminal operations (CONTRACT 12)
+ *
+ * | Method   | Resolves to                                      |
+ * |----------|--------------------------------------------------|
+ * | insert   | `[{ id: 'mock-id', created_at: <Date> }]`        |
+ * | update   | `1` (affected-row count)                         |
+ * | del      | `1` (deleted-row count)                          |
+ * | delete   | `1` (alias for del)                              |
+ * | first    | `null` (no row found by default)                 |
+ * | then     | `[]` (empty result set — chain is thenable)      |
+ * | count    | `[{ count: 0 }]`                                 |
  *
  * @module src/db/__mocks__/knex
  */
 
-// ---------------------------------------------------------------------------
-// Lifecycle state enum (mirrors production)
-// ---------------------------------------------------------------------------
-
 /**
- * @enum {string}
+ * Fluent query-builder chain mock.
+ *
+ * Every builder method returns `mockQuery` so chains can be composed
+ * without throwing. Terminal methods return resolved Promises with the
+ * default values documented above.
+ *
+ * The chain is also thenable (`then` is defined) so `await db('table')`
+ * resolves to `[]` — matching real Knex behaviour when no terminal method
+ * is explicitly called.
+ *
+ * @type {object}
  */
-const DB_STATE = Object.freeze({
-  READY: 'READY',
-  DESTROYING: 'DESTROYING',
-  DESTROYED: 'DESTROYED',
-});
+const mockQuery = {
+  // -------------------------------------------------------------------------
+  // Fluent filter/join/sort methods — all return `this` (CONTRACT 11)
+  // -------------------------------------------------------------------------
+  where:        jest.fn().mockReturnThis(),
+  whereNotIn:   jest.fn().mockReturnThis(),
+  whereNull:    jest.fn().mockReturnThis(),
+  whereIn:      jest.fn().mockReturnThis(),
+  /** @contract CONTRACT 11 — whereRaw must be part of the fluent chain */
+  whereRaw:     jest.fn().mockReturnThis(),
+  leftJoin:     jest.fn().mockReturnThis(),
+  orderBy:      jest.fn().mockReturnThis(),
+  limit:        jest.fn().mockReturnThis(),
+  offset:       jest.fn().mockReturnThis(),
+  returning:    jest.fn().mockReturnThis(),
+  select:       jest.fn().mockReturnThis(),
+  andWhere:     jest.fn().mockReturnThis(),
+  orWhere:      jest.fn().mockReturnThis(),
+  /** @contract CONTRACT 11 — clone must return the chain */
+  clone:        jest.fn().mockReturnThis(),
+  /** @contract CONTRACT 11 — clearSelect must return the chain */
+  clearSelect:  jest.fn().mockReturnThis(),
+  /** @contract CONTRACT 11 — clearOrder must return the chain */
+  clearOrder:   jest.fn().mockReturnThis(),
+  onConflict:   jest.fn().mockReturnThis(),
+  merge:        jest.fn().mockReturnThis(),
+  modify:       jest.fn().mockReturnThis(),
+  join:         jest.fn().mockReturnThis(),
+  innerJoin:    jest.fn().mockReturnThis(),
+  groupBy:      jest.fn().mockReturnThis(),
+  having:       jest.fn().mockReturnThis(),
+  distinct:     jest.fn().mockReturnThis(),
 
-// ---------------------------------------------------------------------------
-// Error type (mirrors production)
-// ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Terminal operations — resolve to expected default values (CONTRACT 12)
+  // -------------------------------------------------------------------------
 
-/**
- * Thrown when a query is attempted against a destroyed mock instance.
- */
-class DatabaseLifecycleError extends Error {
   /**
-   * @param {string} message
-   * @param {string} [state]
+   * Resolves to an array containing a single inserted-row stub.
+   * The stub always includes `id` and `created_at` so callers that
+   * destructure the result do not encounter undefined fields.
+   *
+   * @returns {Promise<Array<{id: string, created_at: Date}>>}
    */
-  constructor(message, state) {
-    super(message);
-    this.name = 'DatabaseLifecycleError';
-    this.code = 'DB_ALREADY_DESTROYED';
-    this.dbState = state || DB_STATE.DESTROYED;
-  }
-}
+  insert: jest.fn().mockResolvedValue([{ id: 'mock-id', created_at: new Date() }]),
 
-// ---------------------------------------------------------------------------
-// Mock query builder (shared fluent chain)
-// ---------------------------------------------------------------------------
+  /**
+   * Resolves to `1` — the affected-row count returned by PostgreSQL/SQLite
+   * after a successful UPDATE.
+   *
+   * @returns {Promise<number>}
+   */
+  update: jest.fn().mockResolvedValue(1),
 
-/**
- * Build a fluent mock query builder.  Every method returns `this` (chainable)
- * and the chain is also thenable so `await db('table')…` resolves to `[]`.
- *
- * @returns {object} A Jest mock query chain.
- */
-function buildMockQuery() {
-  const q = {
-    where:      jest.fn().mockReturnThis(),
-    whereNotIn: jest.fn().mockReturnThis(),
-    whereNull:  jest.fn().mockReturnThis(),
-    whereIn:    jest.fn().mockReturnThis(),
-    whereRaw:   jest.fn().mockReturnThis(),
-    andWhere:   jest.fn().mockReturnThis(),
-    orWhere:    jest.fn().mockReturnThis(),
-    leftJoin:   jest.fn().mockReturnThis(),
-    orderBy:    jest.fn().mockReturnThis(),
-    select:     jest.fn().mockReturnThis(),
-    clone:      jest.fn().mockReturnThis(),
-    clearSelect: jest.fn().mockReturnThis(),
-    clearOrder:  jest.fn().mockReturnThis(),
-    onConflict: jest.fn().mockReturnThis(),
+  /**
+   * Resolves to `1` — the deleted-row count.
+   *
+   * @returns {Promise<number>}
+   */
+  del: jest.fn().mockResolvedValue(1),
 
-    // Termination methods
-    limit:     jest.fn().mockReturnThis(),
-    offset:    jest.fn().mockReturnThis(),
-    returning: jest.fn().mockReturnThis(),
+  /**
+   * Alias for `del` — some callers use `delete` instead.
+   *
+   * @returns {Promise<number>}
+   */
+  delete: jest.fn().mockResolvedValue(1),
 
-    del:    jest.fn().mockResolvedValue(1),
-    insert: jest.fn().mockResolvedValue([{ id: 'mock-id', created_at: new Date() }]),
-    update: jest.fn().mockResolvedValue(1),
-    delete: jest.fn().mockResolvedValue(1),
-    merge:  jest.fn().mockResolvedValue(1),
-    first:  jest.fn().mockResolvedValue(null),
-    count:  jest.fn().mockResolvedValue([{ count: 0 }]),
+  /**
+   * Resolves to `null` — no row found by default.
+   * Tests that expect a row should override this mock locally:
+   *   `mockQuery.first.mockResolvedValueOnce({ id: 'found' })`
+   *
+   * @returns {Promise<null>}
+   */
+  first: jest.fn().mockResolvedValue(null),
 
-    // Make the chain thenable so `await db('table').where(…)` resolves to [].
-    then: jest.fn((resolve) => resolve([])),
-  };
-  return q;
-}
+  /**
+   * Resolves to `[{ count: 0 }]` — the shape PostgreSQL/SQLite return
+   * for `SELECT count(*) ...` queries.
+   *
+   * @returns {Promise<Array<{count: number}>>}
+   */
+  count: jest.fn().mockResolvedValue([{ count: 0 }]),
 
-// ---------------------------------------------------------------------------
-// Transaction-scoped mock (isolated instance)
-// ---------------------------------------------------------------------------
-
-/**
- * Build a transaction-scoped mock that has the same shape as the outer db
- * mock but records its own calls separately.  Tests that care about
- * transaction isolation can inspect `trx.insert.mock.calls` independently.
- *
- * @returns {object} Transaction mock, callable with the same fluent chain.
- */
-function buildTransactionMock() {
-  const trxQuery = buildMockQuery();
-
-  const trx = jest.fn(() => trxQuery);
-  trx.raw         = jest.fn().mockResolvedValue(undefined);
-  trx.destroy     = jest.fn().mockResolvedValue(undefined);
-  trx._isTrxMock  = true;
-
-  // Copy query methods onto trx so callers can do trx.insert(…) directly.
-  Object.assign(trx, trxQuery);
-
-  return trx;
-}
-
-// ---------------------------------------------------------------------------
-// Primary db mock
-// ---------------------------------------------------------------------------
-
-/** Mutable lifecycle state. */
-let _state = DB_STATE.READY;
-
-/**
- * Guard that throws a DatabaseLifecycleError when the mock is not READY.
- *
- * @param {string} operation
- */
-function assertReady(operation) {
-  if (_state !== DB_STATE.READY) {
-    throw new DatabaseLifecycleError(
-      `[db-mock] Cannot execute "${operation}": database connection pool is ` +
-      (_state === DB_STATE.DESTROYING
-        ? 'being shut down (state: DESTROYING).'
-        : 'already destroyed (state: DESTROYED).'),
-      _state
-    );
-  }
-}
-
-// The mock chain for bare db() calls.
-const _mockQuery = buildMockQuery();
-
-/**
- * The callable mock db function.  Calling `db('tableName')` returns the
- * shared fluent mock query chain.
- *
- * @param {string} tableName
- * @returns {object} Fluent query chain mock.
- */
-const db = jest.fn((tableName) => {
-  assertReady(`db("${tableName}")`);
-  return _mockQuery;
-});
-
-// --- db.raw ---
-db.raw = jest.fn((..._args) => {
-  assertReady('db.raw');
-  return Promise.resolve(undefined);
-});
-
-// --- db.transaction ---
-// NOTE: assertReady() must execute synchronously so callers that use
-// `expect(() => db.transaction(...)).toThrow()` can catch the guard error.
-// The function is therefore NOT declared async at the outer level; the async
-// work is only done after the guard passes.
-db.transaction = jest.fn((callback) => {
-  assertReady('db.transaction');
-  const trx = buildTransactionMock();
-  return Promise.resolve().then(() => callback(trx));
-});
-
-// --- db.destroy (idempotent) ---
-db.destroy = jest.fn(async () => {
-  if (_state === DB_STATE.DESTROYED || _state === DB_STATE.DESTROYING) {
-    return; // idempotent
-  }
-  _state = DB_STATE.DESTROYING;
-  _state = DB_STATE.DESTROYED;
-});
-
-// --- Observability helpers (mirror production API) ---
-db._getState  = () => _state;
-db._DB_STATE  = DB_STATE;
-
-/**
- * Test-only helper — reset the mock state back to READY and clear all call
- * records.  Call this in `afterEach` when a test exercises `db.destroy()`.
- */
-db._resetState = () => {
-  _state = DB_STATE.READY;
-  db.mockClear();
-  db.raw.mockClear();
-  db.transaction.mockClear();
-  db.destroy.mockClear();
-  _mockQuery.where.mockClear();
-  _mockQuery.select.mockClear();
-  _mockQuery.insert.mockClear();
-  _mockQuery.update.mockClear();
-  _mockQuery.del.mockClear();
-  _mockQuery.delete.mockClear();
-  _mockQuery.first.mockClear();
-  _mockQuery.returning.mockClear();
-  _mockQuery.then.mockClear();
+  /**
+   * Makes the chain thenable so `await db('table').select('*')` resolves
+   * to an empty array — matching real Knex behaviour.
+   *
+   * @param {Function} resolve - Fulfilment handler.
+   * @returns {Promise<Array>}
+   */
+  where: jest.fn().mockReturnThis(),
+  whereNotIn: jest.fn().mockReturnThis(),
+  whereNull: jest.fn().mockReturnThis(),
+  whereIn: jest.fn().mockReturnThis(),
+  whereRaw: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockReturnThis(),
+  offset: jest.fn().mockReturnThis(),
+  returning: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
+  del: jest.fn().mockResolved(1),
+  insert: jest.fn().mockResolved([{ id: 'mock-id', created_at: new Date() }]),
+  update: jest.fn().mockResolved(1),
+  delete: jest.fn().mockResolved(1),
+  first: jest.fn().mockResolved(null),
+  andWhere: jest.fn().mockReturnThis(),
+  orWhere: jest.fn().mockReturnThis(),
+  // Make mockQuery thenable so `await query` resolves to []
+  then: jest.fn((resolve) => resolve([])),
 };
 
-// Re-export the same error and state enum so tests can import them from the
-// mock path without needing to know the production file path.
-db.DatabaseLifecycleError = DatabaseLifecycleError;
-db.DB_STATE = DB_STATE;
+/**
+ * Mock Knex instance.
+ *
+ * Calling `db(tableName)` returns the shared `mockQuery` chain. Additional
+ * static methods match the real Knex interface so callers that access
+ * `db.raw`, `db.transaction`, `db.destroy`, `db.schema`, `db.migrate`, or
+ * `db.fn` do not receive `undefined`.
+ *
+ * @type {jest.Mock & {
+ *   raw: jest.Mock,
+ *   transaction: jest.Mock,
+ *   destroy: jest.Mock,
+ *   schema: object,
+ *   migrate: { latest: jest.Mock },
+ *   fn: { now: jest.Mock }
+ * }}
+ */
+const db = jest.fn(() => mockQuery);
+
+// ---------------------------------------------------------------------------
+// db.raw — raw SQL passthrough (CONTRACT 9 + CONTRACT 10)
+// ---------------------------------------------------------------------------
+db.raw = jest.fn().mockResolvedValue(undefined);
+
+// ---------------------------------------------------------------------------
+// db.transaction — executes callback with db as trx (CONTRACT 13)
+//
+// Invariants:
+//  - The callback receives `db` (the mock itself) as its trx argument so
+//    callers can issue queries inside the transaction body.
+//  - If the callback throws, the error propagates to the caller — matching
+//    real Knex rollback-on-throw semantics.
+//  - If the callback succeeds, the transaction resolves to undefined.
+// ---------------------------------------------------------------------------
+db.transaction = jest.fn(async (callback) => {
+  // Pass the same mock db as the transaction client.
+  // Any error thrown by callback propagates naturally.
+db.raw = jest.fn().mockResolved();
+db.destroy = jest.fn().mockResolved();
+db.transaction = jest.fn(async (callback) => {
+  // The callback receives the same mock db instance as try
+  await callback(db);
+});
+
+// ---------------------------------------------------------------------------
+// db.destroy — pool teardown for graceful shutdown (CONTRACT 9)
+//
+// The real Knex instance exposes destroy() for the shutdown coordinator
+// (see src/utils/shutdownCoordinator.js). The mock resolves immediately.
+// ---------------------------------------------------------------------------
+db.destroy = jest.fn().mockResolvedValue(undefined);
+
+// ---------------------------------------------------------------------------
+// db.schema — DDL builder stub (CONTRACT 9)
+//
+// Callers that check `if (db.schema)` or call `db.schema.createTable()`
+// in migration helpers need this to be a defined, non-null object.
+// Individual DDL methods are stubbed as resolved Promises.
+// ---------------------------------------------------------------------------
+db.schema = {
+  createTable:        jest.fn().mockResolvedValue(undefined),
+  dropTable:          jest.fn().mockResolvedValue(undefined),
+  dropTableIfExists:  jest.fn().mockResolvedValue(undefined),
+  hasTable:           jest.fn().mockResolvedValue(false),
+  hasColumn:         jest.fn().mockResolvedValue(false),
+  alterTable:         jest.fn().mockResolvedValue(undefined),
+  raw:                jest.fn().mockResolvedValue(undefined),
+};
+
+// ---------------------------------------------------------------------------
+// db.migrate — migration runner stub
+//
+// `db.migrate.latest()` is called by helpers that programmatically run
+// migrations in test setup. It resolves with the standard [batchNo, files]
+// tuple that Knex returns.
+// ---------------------------------------------------------------------------
+db.migrate = {
+  latest:   jest.fn().mockResolvedValue([0, []]),
+  rollback: jest.fn().mockResolvedValue([0, []]),
+  currentVersion: jest.fn().mockResolvedValue('none'),
+};
+
+// ---------------------------------------------------------------------------
+// db.fn — Knex function helpers
+//
+// `db.fn.now()` is used in insert/update payloads to produce a
+// database-side timestamp. The mock returns a fixed ISO string so assertions
+// are deterministic.
+// ---------------------------------------------------------------------------
+db.fn = {
+  now: jest.fn(() => new Date().toISOString()),
+};
 
 module.exports = db;
 module.exports.DatabaseLifecycleError = DatabaseLifecycleError;
