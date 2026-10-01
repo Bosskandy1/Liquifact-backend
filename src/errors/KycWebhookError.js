@@ -1,50 +1,33 @@
 'use strict';
 
 /**
- * @fileoverview Structured error for KYC webhook handlers.
+ * @fileoverview Structured error for KYC webhook handlers with deterministic
+ * failure-recovery classification.
  *
- * Carries an HTTP status, a machine-readable error code, and optional
- * observability context (smeId, tenantId, requestId) through the Express
- * error chain so that {@link module:middleware/kycWebhookErrorHandler}
- * can produce a consistent structured response and structured log line
- * without per-handler duplication.
+ * Every `KycWebhookError` instance carries `retryable` and `retryHint` as
+ * **owned properties**, computed once at construction from a central lookup
+ * table keyed on `code` and `status`. This makes recovery behaviour
+ * deterministic: callers can ask `err.retryable` without consulting separate
+ * sets or switch statements in multiple files.
+ *
+ * ## Design contract
+ *
+ * - `retryable` is `true` only for transient infrastructure failures (503
+ *   service unavailable, 429 rate-limited, open circuit breaker).  All
+ *   semantic rejections (bad signature, unknown payload, tenant mismatch) are
+ *   permanently non-retryable.
+ * - `retryHint` mirrors retryability: it is either a safe, operator-facing
+ *   string or the empty string `''` for non-retryable errors, never an
+ *   internal detail.
+ * - `status` and `retryable` are fully determined by `code` when the
+ *   canonical factory `createKycWebhookError` is used, preventing
+ *   status/code divergence across call sites.
  *
  * ## Backward compatibility
  *
- * The three-argument form `new KycWebhookError(message, status, code)` is
- * preserved exactly.  The optional fourth argument `context` is additive:
- * all existing call sites work without modification.
- *
- * ## Retryability contract
- *
- * `isRetryable()` is the single authoritative source of truth for whether
- * a client should retry.  `kycWebhookErrorHandler` delegates to this method
- * rather than duplicating the RETRYABLE_CODES / RETRYABLE_STATUSES sets.
- *
- * ### Validation boundaries (issue #1372)
- *
- * The constructor now enforces three invariants so that a malformed
- * `KycWebhookError` can never slip silently through the error chain:
- *
- *  1. **`status`** – must be a finite integer in the range 400–599.
- *     Any value outside that range is clamped to `500`.  Non-numeric
- *     inputs are also coerced to `500`.
- *
- *  2. **`code`** – must be a non-empty string drawn from the
- *     `ALLOWED_KYC_ERROR_CODES` allowlist exported from this module.
- *     An unrecognised code is replaced with `'INTERNAL_ERROR'` rather
- *     than throwing, which keeps the error chain intact while making
- *     the misconfiguration diagnosable through the structured log emitted
- *     by `kycWebhookErrorHandler`.
- *
- *  3. **`message`** – must be a string.  Non-string inputs are coerced
- *     to the string `'KYC webhook error'` so `err.message` is always
- *     safe to log or include in a problem-detail response.
- *
- * The static {@link KycWebhookError.create} factory is the preferred
- * construction path: it validates all three fields before instantiation
- * and throws a `TypeError` for clearly illegal inputs, making bugs in
- * callers immediately obvious rather than silently degrading.
+ * The constructor signature `(message, status, code)` is unchanged.  Existing
+ * `new KycWebhookError(msg, status, code)` call sites continue to work — they
+ * now also get `retryable` / `retryHint` on the instance for free.
  *
  * @module errors/KycWebhookError
  */
@@ -54,115 +37,146 @@ const {
 } = require('../constants/kycWebhooks');
 
 // ---------------------------------------------------------------------------
-// Allowed HTTP status codes for KYC webhook errors.
-// This set is intentionally narrow — it mirrors the statuses documented in
-// the JSDoc for the constructor and the codes emitted by kycWebhookService.
+// Canonical recovery table
 // ---------------------------------------------------------------------------
 
 /**
- * HTTP status codes that are valid for KycWebhookError instances.
+ * Canonical table that maps every known KYC webhook error code to its
+ * authoritative HTTP status, retryability flag, and client-facing retry hint.
+ *
+ * Keeping the table here — rather than duplicating it across the middleware,
+ * service, and tests — is what makes failure recovery deterministic.
+ *
+ * @type {Readonly<Record<string, {status: number, retryable: boolean, retryHint: string}>>}
+ */
+const KYC_WEBHOOK_ERROR_RECOVERY = Object.freeze({
+  // Transient / retryable
+  [KYC_WEBHOOK_ERROR_CODES.MISSING_SECRET]: {
+    status: 503,
+    retryable: true,
+    retryHint: 'Retry the request in a few moments.',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.CIRCUIT_OPEN]: {
+    status: 503,
+    retryable: true,
+    retryHint: 'Retry the request in a few moments.',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.RATE_LIMITED]: {
+    status: 429,
+    retryable: true,
+    retryHint: 'Wait for the rate limit window to reset before retrying.',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.PERSISTENCE_ERROR]: {
+    status: 500,
+    retryable: false,
+    retryHint: '',
+  },
+
+  // Auth / signature — permanent, caller must fix the request
+  [KYC_WEBHOOK_ERROR_CODES.MISSING_SIGNATURE]: {
+    status: 401,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.INVALID_SIGNATURE]: {
+    status: 401,
+    retryable: false,
+    retryHint: '',
+  },
+
+  // Payload / validation — permanent, caller must send a valid payload
+  [KYC_WEBHOOK_ERROR_CODES.INVALID_PAYLOAD]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.INVALID_EVENT]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.UNKNOWN_EVENT_TYPE]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.MISSING_SME_ID]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.MISSING_STATUS]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.UNKNOWN_STATUS]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.INVALID_PAGINATION]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.INVALID_CURSOR]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.PAYLOAD_TOO_LARGE]: {
+    status: 413,
+    retryable: false,
+    retryHint: '',
+  },
+
+  // AuthN / tenant — permanent
+  [KYC_WEBHOOK_ERROR_CODES.TENANT_MISMATCH]: {
+    status: 403,
+    retryable: false,
+    retryHint: '',
+  },
+  [KYC_WEBHOOK_ERROR_CODES.MISSING_TENANT_CONTEXT]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+
+  // Quarantine — permanent
+  [KYC_WEBHOOK_ERROR_CODES.QUARANTINED]: {
+    status: 400,
+    retryable: false,
+    retryHint: '',
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Fallback: derive retryability from HTTP status when code is unknown
+// ---------------------------------------------------------------------------
+
+/**
+ * Retryable HTTP statuses used as a fallback when `code` is not in the
+ * canonical recovery table.
  *
  * @type {ReadonlySet<number>}
  */
-const ALLOWED_KYC_HTTP_STATUSES = Object.freeze(new Set([
-  400, // Bad Request      — invalid_payload, missing_sme_id, missing_status, …
-  401, // Unauthorized     — missing_signature, invalid_signature
-  403, // Forbidden        — tenant_mismatch
-  429, // Too Many Requests — RATE_LIMITED
-  500, // Internal Error   — persistence_error, INTERNAL_ERROR
-  503, // Unavailable      — missing_secret, CIRCUIT_OPEN
-]));
+const RETRYABLE_STATUS_FALLBACK = Object.freeze(new Set([429, 503]));
 
 /**
- * Allowlist of machine-readable codes that may appear on a KycWebhookError.
+ * Derive a retry hint from the HTTP status alone (fallback only).
  *
- * Built from the canonical `KYC_WEBHOOK_ERROR_CODES` constant so the
- * allowlist and the constant never drift.  The fallback sentinel
- * `'INTERNAL_ERROR'` is added explicitly because it is used as the
- * replacement value when an unknown code is supplied.
- *
- * @type {ReadonlySet<string>}
+ * @param {number} status - HTTP status code.
+ * @returns {string}
  */
-const ALLOWED_KYC_ERROR_CODES = Object.freeze(
-  new Set([
-    ...Object.values(KYC_WEBHOOK_ERROR_CODES),
-    'INTERNAL_ERROR', // fallback sentinel for unrecognised codes
-  ]),
-);
-
-/**
- * Fallback HTTP status used when an out-of-range or non-numeric value is
- * supplied.
- * @type {number}
- */
-const DEFAULT_STATUS = 500;
-
-/**
- * Fallback code used when an unrecognised or non-string value is supplied.
- * @type {string}
- */
-const DEFAULT_CODE = 'INTERNAL_ERROR';
-
-/**
- * Fallback message used when a non-string value is supplied.
- * @type {string}
- */
-const DEFAULT_MESSAGE = 'KYC webhook error';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Coerce and validate an HTTP status value.
- *
- * Returns the integer status if it is a member of {@link ALLOWED_KYC_HTTP_STATUSES}.
- * Falls back to {@link DEFAULT_STATUS} for anything that is not a recognised
- * KYC webhook status, including non-numeric inputs and out-of-range integers.
- *
- * @param {unknown} raw - Caller-supplied status value.
- * @returns {number} A safe HTTP status code.
- */
-function resolveStatus(raw) {
-  const n = Number(raw);
-  if (Number.isFinite(n) && Number.isInteger(n) && ALLOWED_KYC_HTTP_STATUSES.has(n)) {
-    return n;
+function retryHintFromStatus(status) {
+  if (status === 429) {
+    return 'Wait for the rate limit window to reset before retrying.';
   }
-  return DEFAULT_STATUS;
-}
-
-/**
- * Coerce and validate an error code value.
- *
- * Returns `raw` as-is if it is in {@link ALLOWED_KYC_ERROR_CODES}.
- * Falls back to {@link DEFAULT_CODE} for anything that is not a recognised
- * code, including non-string inputs and empty strings.
- *
- * @param {unknown} raw - Caller-supplied code value.
- * @returns {string} A safe, allowlisted error code.
- */
-function resolveCode(raw) {
-  if (typeof raw === 'string' && raw.length > 0 && ALLOWED_KYC_ERROR_CODES.has(raw)) {
-    return raw;
+  if (status === 503) {
+    return 'Retry the request in a few moments.';
   }
-  return DEFAULT_CODE;
-}
-
-/**
- * Coerce and validate a message value.
- *
- * Returns `raw` as-is if it is a non-empty string.
- * Falls back to {@link DEFAULT_MESSAGE} for `null`, `undefined`, empty strings,
- * and non-string types.
- *
- * @param {unknown} raw - Caller-supplied message value.
- * @returns {string} A safe string message.
- */
-function resolveMessage(raw) {
-  if (typeof raw === 'string' && raw.length > 0) {
-    return raw;
-  }
-  return DEFAULT_MESSAGE;
+  return '';
 }
 
 // ---------------------------------------------------------------------------
@@ -170,97 +184,149 @@ function resolveMessage(raw) {
 // ---------------------------------------------------------------------------
 
 /**
- * Lightweight error class that pairs an HTTP status with an application
- * error code for KYC webhook ingestion and listing endpoints.
+ * Structured, typed error for KYC webhook ingestion and listing endpoints.
  *
- * All constructor inputs are validated on the way in (see module-level
- * JSDoc for the invariants).  Prefer {@link KycWebhookError.create} over
- * direct construction in new callers so boundary violations surface as
- * immediate `TypeError`s rather than silent coercions.
+ * Carries HTTP status, machine-readable code, and deterministic recovery
+ * metadata (`retryable`, `retryHint`) on every instance so that error
+ * handlers and callers do not need to re-derive recovery behaviour.
  */
 class KycWebhookError extends Error {
   /**
-   * @param {string} message  - Human-readable error description (coerced to string if needed).
-   * @param {number} status   - HTTP status code; must be one of 400, 401, 403, 429, 500, 503.
-   *                            Out-of-range values are silently clamped to 500.
-   * @param {string} code     - Machine-readable error code from the KYC_WEBHOOK_ERROR_CODES
-   *                            allowlist.  Unrecognised codes fall back to 'INTERNAL_ERROR'.
+   * Creates a new KycWebhookError with deterministic recovery metadata.
+   *
+   * @param {string}          message  - Human-readable, safe error description.
+   * @param {number}          status   - HTTP status code (400, 401, 403, 429, 500, 503 …).
+   * @param {string}          code     - Machine-readable error code from KYC_WEBHOOK_ERROR_CODES.
+   * @param {object}          [opts]   - Optional overrides.
+   * @param {boolean}         [opts.retryable]  - Override computed retryable flag.
+   * @param {string}          [opts.retryHint]  - Override computed retry hint.
    */
-  constructor(message, status, code) {
-    // Resolve and validate all fields before calling super() (which captures
-    // the stack), so the Error is always in a consistent state.
-    const safeMessage = resolveMessage(message);
-    const safeStatus = resolveStatus(status);
-    const safeCode = resolveCode(code);
-
-    super(safeMessage);
-
+  constructor(message, status, code, opts = {}) {
+    super(message);
     this.name = 'KycWebhookError';
-    this.status = safeStatus;
-    this.code = safeCode;
+    this.status = status;
+    this.code = code;
 
-    // Capture a clean stack trace that excludes this constructor frame.
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, KycWebhookError);
-    }
-  }
+    // Resolve recovery metadata from the canonical table, falling back to
+    // status-based heuristics for codes not yet in the table.
+    const recovery = code !== undefined ? KYC_WEBHOOK_ERROR_RECOVERY[code] : undefined;
 
-  /**
-   * Returns a plain object representation of this error that is safe to
-   * include in structured logs (no stack traces, no internal state).
-   *
-   * @returns {{ name: string, status: number, code: string, message: string }}
-   */
-  toJSON() {
-    return {
-      name: this.name,
-      status: this.status,
-      code: this.code,
-      message: this.message,
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Static factory
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Strict factory that throws a `TypeError` immediately for clearly invalid
-   * inputs rather than silently coercing them.
-   *
-   * Use this in new callers where a misconfigured error should be a hard
-   * failure (e.g. in unit tests, in service constructors, or when building
-   * errors from validated constants).  The constructor's lenient coercion
-   * path remains available for backward compatibility with existing callers
-   * that may supply dynamic values.
-   *
-   * @param {string} message - Must be a non-empty string.
-   * @param {number} status  - Must be a member of {@link ALLOWED_KYC_HTTP_STATUSES}.
-   * @param {string} code    - Must be a member of {@link ALLOWED_KYC_ERROR_CODES}.
-   * @returns {KycWebhookError}
-   * @throws {TypeError} When any argument fails its type / allowlist check.
-   */
-  static create(message, status, code) {
-    if (typeof message !== 'string' || message.trim().length === 0) {
-      throw new TypeError(
-        `KycWebhookError.create: 'message' must be a non-empty string, got ${JSON.stringify(message)}`,
-      );
-    }
-    if (!Number.isFinite(status) || !Number.isInteger(status) || !ALLOWED_KYC_HTTP_STATUSES.has(status)) {
-      throw new TypeError(
-        `KycWebhookError.create: 'status' must be one of [${[...ALLOWED_KYC_HTTP_STATUSES].join(', ')}], got ${JSON.stringify(status)}`,
-      );
-    }
-    if (typeof code !== 'string' || !ALLOWED_KYC_ERROR_CODES.has(code)) {
-      throw new TypeError(
-        `KycWebhookError.create: 'code' must be a recognised KYC error code, got ${JSON.stringify(code)}`,
-      );
+    if (recovery !== undefined) {
+      this.retryable = Object.prototype.hasOwnProperty.call(opts, 'retryable')
+        ? Boolean(opts.retryable)
+        : recovery.retryable;
+      this.retryHint = Object.prototype.hasOwnProperty.call(opts, 'retryHint')
+        ? String(opts.retryHint)
+        : recovery.retryHint;
+    } else {
+      // Unknown / future code: fall back to status heuristics
+      const retryableByStatus = RETRYABLE_STATUS_FALLBACK.has(status);
+      this.retryable = Object.prototype.hasOwnProperty.call(opts, 'retryable')
+        ? Boolean(opts.retryable)
+        : retryableByStatus;
+      this.retryHint = Object.prototype.hasOwnProperty.call(opts, 'retryHint')
+        ? String(opts.retryHint)
+        : retryHintFromStatus(status);
     }
 
-    return new KycWebhookError(message, status, code);
+    // Omit constructor call from stack trace for cleaner diagnostics.
+    if (typeof Error.captureStackTrace === 'function') {
+      Error.captureStackTrace(this, this.constructor);
+    }
   }
 }
 
+// ---------------------------------------------------------------------------
+// Factory: enforces code → status consistency
+// ---------------------------------------------------------------------------
+
+/**
+ * Set of known KYC webhook error codes.  The factory validates against this
+ * set to catch typos and code/status divergence at construction time.
+ *
+ * @type {ReadonlySet<string>}
+ */
+const KNOWN_KYC_WEBHOOK_CODES = Object.freeze(
+  new Set(Object.values(KYC_WEBHOOK_ERROR_CODES))
+);
+
+/**
+ * Creates a `KycWebhookError` using the canonical status from the recovery
+ * table, ensuring that every `(code, status)` pair is consistent across all
+ * call sites.
+ *
+ * Prefer this factory over `new KycWebhookError(msg, status, code)` so that
+ * the status is always derived from the code and cannot diverge.
+ *
+ * @param {string}  code     - Member of {@link KYC_WEBHOOK_ERROR_CODES}.
+ * @param {string}  message  - Safe, human-readable description.
+ * @param {object}  [opts]   - Optional overrides forwarded to the constructor.
+ * @returns {KycWebhookError}
+ * @throws {TypeError} When `code` is not a known KYC webhook error code.
+ */
+function createKycWebhookError(code, message, opts = {}) {
+  if (!KNOWN_KYC_WEBHOOK_CODES.has(code)) {
+    throw new TypeError(`Unknown KYC webhook error code: ${String(code)}`);
+  }
+  const recovery = KYC_WEBHOOK_ERROR_RECOVERY[code];
+  const status = recovery ? recovery.status : 500;
+  return new KycWebhookError(message, status, code, opts);
+}
+
+// ---------------------------------------------------------------------------
+// Classifier: maps arbitrary thrown values to KycWebhookError
+// ---------------------------------------------------------------------------
+
+/**
+ * Classifies an arbitrary thrown value into a `KycWebhookError`.
+ *
+ * - `KycWebhookError` instances are returned as-is.
+ * - Objects with a known `code` in `KYC_WEBHOOK_ERROR_CODES` are promoted.
+ * - Everything else becomes a generic 500 persistence/internal error so that
+ *   internal messages (DB constraint text, stack traces) never cross the API
+ *   boundary.
+ *
+ * @param {unknown} error - Thrown value from any KYC webhook handler.
+ * @returns {KycWebhookError}
+ */
+function classifyKycWebhookError(error) {
+  if (error instanceof KycWebhookError) {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const code = error.code;
+    if (code && KNOWN_KYC_WEBHOOK_CODES.has(code)) {
+      return createKycWebhookError(
+        code,
+        typeof error.message === 'string' ? error.message : 'KYC webhook operation failed.',
+      );
+    }
+
+    // Circuit-breaker: the circuit breaker uses a non-standard error code
+    // string that might not be in the constants table.
+    if (code === 'CIRCUIT_OPEN' || (error.message && String(error.message).includes('circuit'))) {
+      return createKycWebhookError(
+        KYC_WEBHOOK_ERROR_CODES.CIRCUIT_OPEN,
+        'KYC webhook service is temporarily unavailable. Please retry.',
+      );
+    }
+  }
+
+  // Generic internal error — intentionally opaque to protect internals.
+  return createKycWebhookError(
+    KYC_WEBHOOK_ERROR_CODES.PERSISTENCE_ERROR,
+    'An internal KYC webhook error occurred.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
 module.exports = KycWebhookError;
-module.exports.ALLOWED_KYC_HTTP_STATUSES = ALLOWED_KYC_HTTP_STATUSES;
-module.exports.ALLOWED_KYC_ERROR_CODES = ALLOWED_KYC_ERROR_CODES;
+module.exports.KycWebhookError = KycWebhookError;
+module.exports.KYC_WEBHOOK_ERROR_RECOVERY = KYC_WEBHOOK_ERROR_RECOVERY;
+module.exports.KNOWN_KYC_WEBHOOK_CODES = KNOWN_KYC_WEBHOOK_CODES;
+module.exports.createKycWebhookError = createKycWebhookError;
+module.exports.classifyKycWebhookError = classifyKycWebhookError;
