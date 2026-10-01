@@ -93,6 +93,35 @@ function httpStatusToCode(status) {
   return `HTTP_${status}`;
 }
 
+const INTERNAL_ERROR_MESSAGE = "An internal server error occurred.";
+const DEFAULT_RETRY_HINT =
+  "Do not retry until the issue is resolved or support is contacted.";
+
+/**
+ * Keep the error response invariant: only an integer client/server error
+ * status may cross the HTTP boundary.
+ *
+ * @param {unknown} status Candidate HTTP status.
+ * @returns {number}
+ */
+function normalizeStatus(status) {
+  return Number.isInteger(status) && status >= 400 && status <= 599
+    ? status
+    : 500;
+}
+
+/**
+ * Keep externally visible error fields scalar and predictable when malformed
+ * error-like values reach the terminal error handler.
+ *
+ * @param {unknown} value Candidate string value.
+ * @param {string} fallback Safe fallback value.
+ * @returns {string}
+ */
+function stringOrFallback(value, fallback) {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
 /**
  * Return true when value is a finite integer within the HTTP status range.
  *
@@ -246,16 +275,17 @@ function isAppErrorLike(error) {
  * @returns {{status: number, code: string, message: string, retryable: boolean, retryHint: string, fieldErrors?: Array}}
  */
 function mapError(error) {
-  // Use the canonical type guard instead of fragile instanceof + name checks.
-  if (AppError.is(error)) {
-    const mapped = {
-      status: error.status,
-      code: error.code || httpStatusToCode(error.status),
-      message: error.detail || error.message,
-      // AppError guarantees retryable is always a boolean; keep ?? for safety
-      // against deserialized cross-boundary errors that lost their prototype.
-      retryable: error.retryable ?? false,
-      retryHint: error.retryHint ?? "",
+  if (error && (error instanceof AppError || error.name === "AppError")) {
+    const status = normalizeStatus(error.status);
+    return {
+      status,
+      code: stringOrFallback(error.code, httpStatusToCode(status)),
+      message: stringOrFallback(
+        error.detail,
+        stringOrFallback(error.message, INTERNAL_ERROR_MESSAGE),
+      ),
+      retryable: error.retryable === true,
+      retryHint: stringOrFallback(error.retryHint, ""),
     };
     // Surface field-level validation errors when present so the error handler
     // can include them in the response body without additional duck-typing.
@@ -269,9 +299,8 @@ function mapError(error) {
     return {
       status: 403,
       code: "FORBIDDEN",
-      message: normalizeString(
+      message: stringOrFallback(
         error.message,
-        MAX_MESSAGE_LENGTH,
         "CORS policy: origin is not allowed.",
       ),
       retryable: false,
@@ -302,24 +331,25 @@ function mapError(error) {
       retryHint: "Retry the request in a few moments.",
     };
   }
-
-  const status = normalizeStatus(isPlainObject(error) ? error.status : undefined);
-  const retryable = RETIYABLE_STATUSES.includes(status);
-  const message =
-    status === 500
-      ? "An internal server error occurred."
-      : normalizeString(
-          isPlainObject(error) ? error.message : undefined,
-          MAX_MESSAGE_LENGTH,
-          "An internal server error occurred.",
-        );
+  const status = normalizeStatus(error && error.status);
+  const retryableStatuses = [429, 503];
+  const retryable = retryableStatuses.includes(status);
+  let retryHint = DEFAULT_RETRY_HINT;
+  if (status === 429) {
+    retryHint = "Wait for the rate limit window to reset before retrying.";
+  } else if (status === 503) {
+    retryHint = "Retry the request in a few moments.";
+  }
   return {
     isObject: true,
     isAppError,
     name,
     status,
     code: httpStatusToCode(status),
-    message,
+    message:
+      status === 500
+        ? INTERNAL_ERROR_MESSAGE
+        : stringOrFallback(error && error.message, INTERNAL_ERROR_MESSAGE),
     retryable,
     retryHint: defaultRetryHint(status),
   };
